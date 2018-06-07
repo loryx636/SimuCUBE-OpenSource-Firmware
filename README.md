@@ -4,3 +4,8 @@ This is the repository for the opensource development of the SimuCUBE firmware.
 See the Wiki page for details. 
 
 https://github.com/SimuCUBE/SimuCUBE-OpenSource-Firmware/wiki
+
+# License
+All contributors must agree to the Granite Devices Contributor License Agreement, posted at https://granitedevices.com/wiki/Granite_Devices_Contributor_License_Agreement
+
+All Granite Devices legal documents, such as the EULA, can be found from https://granitedevices.com/legal

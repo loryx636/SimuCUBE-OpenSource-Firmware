@@ -10,7 +10,7 @@ All contributors must agree to the Granite Devices Contributor License Agreement
 
 All Granite Devices legal documents, such as the EULA, can be found from https://granitedevices.com/legal
 
-## How to submit your cde
+## How to submit your code
 
 Implement your code and features. In you pull request, write following:
 

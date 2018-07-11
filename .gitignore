@@ -1,32 +1,73 @@
-# Prerequisites
-*.d
-
 # Compiled Object files
 *.slo
 *.lo
 *.o
 *.obj
+*.o.d
+*.lst
+*~
+*.hg
+.hg/*
+.hgignore
+trash
 
-# Precompiled Headers
-*.gch
-*.pch
 
 # Compiled Dynamic libraries
 *.so
 *.dylib
 *.dll
 
-# Fortran module files
-*.mod
-*.smod
-
 # Compiled Static libraries
 *.lai
 *.la
-*.a
+#*.a
 *.lib
 
 # Executables
 *.exe
 *.out
 *.app
+#*.elf
+core
+.svn
+octave-core
+*.hex
+*.map
+*.asm
+ion_rom.bin
+*.d
+*.hex
+*.bin
+
+Debug/*.hex
+Debug/*.elf
+Debug/*.map
+Debug/SimpleMotion/*.o
+Debug/SimpleMotion/*.d
+Debug/src/*.o
+Debug/src/*.d
+Debug/system/src/cmsis/*.o
+Debug/system/src/cmsis/*.d
+Debug/system/src/cortexm/*.o
+Debug/system/src/cortexm/*.d
+Debug/system/src/diag/*.o
+Debug/system/src/diag/*.d
+Debug/system/src/newlib/*.o
+Debug/system/src/newlib/*.d
+Debug/system/src/stm32f4-hal/*.o
+Debug/system/src/stm32f4-hal/*.d
+/Debug/
+*.db
+/Debug-normal/
+/Release-bootloadable/
+/Release-normal/
+/Debug-bootloadable/
+/Debug-bootloadable-opensource/
+/Debug-normal-opensource/
+
+#qt user-specific project files
+*.pro.user
+*.pro.user.*
+
+#qt builds
+/Examples/build*

@@ -52,7 +52,7 @@ bool debugMode2 = false;
  	 change these for releases! */
 uint8_t majorVersion= 0;
 uint8_t minorVersion= 10;
-uint8_t buildVersion= 3;
+uint8_t buildVersion= 4;
 
 /* Lowest compatible settings version this firmware is compatible with.
  * Write a converter function if the compatibility changes!

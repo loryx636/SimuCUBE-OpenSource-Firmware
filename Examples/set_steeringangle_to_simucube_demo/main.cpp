@@ -33,13 +33,13 @@ Simucube 1:
 #define simucubepid 0x0d5a
 
 Simucube 2 Sport:
-#define simucubepid 0x0d5f
+#define simucubepid 0x0d61
 
 Simucube 2 Pro:
 #define simucubepid 0x0d60
 
 Simucube 2 Ultimate:
-#define simucubepid 0x0d61
+#define simucubepid 0x0d5f
 */
 
 #define simucubepid 0x0d5a

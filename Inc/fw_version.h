@@ -14,26 +14,14 @@
  *
  * ---------------------------------------------------------------------------
 */
-#ifndef CHARDWARECONFIG_H_
-#define CHARDWARECONFIG_H_
 
-#include "types.h"
-#include "config_comm_defines.h"
-#include <cstdint>
+#ifndef FW_VERSION_H_
+#define FW_VERSION_H_
 
 
-class cHardwareConfig {
-public:
-	cHardwareConfig();
-	virtual ~cHardwareConfig();
+#define FW_MAJOR_VERSION 1
+#define FW_MINOR_VERSION 0
+#define FW_BUILD_VERSION 22
 
-	int32_t hwSettings[numberOfHwSettingsAddrs];
-	uint8_t bytestore[256];
-	void SetDefault();
-	void convertDesktopSpring();
 
-private:
-	uint16_t ScaleAnalogAxis(uint16_t raw, bool invert, uint16_t minvalue, uint16_t maxvalue);
-};
-
-#endif /* CHARDWARECONFIG_H_ */
+#endif /* FW_VERSION_H_ */

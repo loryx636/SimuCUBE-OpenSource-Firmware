@@ -14,26 +14,20 @@
  *
  * ---------------------------------------------------------------------------
 */
-#ifndef CHARDWARECONFIG_H_
-#define CHARDWARECONFIG_H_
 
-#include "types.h"
+#ifndef CBUTTONCONFIG_H_
+#define CBUTTONCONFIG_H_
+
 #include "config_comm_defines.h"
-#include <cstdint>
 
+// button configs are not really used for anything at the moment.
 
-class cHardwareConfig {
+class cButtonConfig {
 public:
-	cHardwareConfig();
-	virtual ~cHardwareConfig();
-
-	int32_t hwSettings[numberOfHwSettingsAddrs];
-	uint8_t bytestore[256];
-	void SetDefault();
-	void convertDesktopSpring();
-
-private:
-	uint16_t ScaleAnalogAxis(uint16_t raw, bool invert, uint16_t minvalue, uint16_t maxvalue);
+	cButtonConfig();
+	virtual ~cButtonConfig();
+	int32_t settings[numberofbuttonsettings];
+	void setDefault();
 };
 
-#endif /* CHARDWARECONFIG_H_ */
+#endif /* CBUTTONCONFIG_H_ */

@@ -14,26 +14,27 @@
  *
  * ---------------------------------------------------------------------------
 */
-#ifndef CHARDWARECONFIG_H_
-#define CHARDWARECONFIG_H_
 
-#include "types.h"
-#include "config_comm_defines.h"
+#ifndef DRIVEPARAMETERTRACKER_H_
+#define DRIVEPARAMETERTRACKER_H_
+
 #include <cstdint>
 
+#define MAXPARAMETERS 15
 
-class cHardwareConfig {
+class DriveParameterTracker {
 public:
-	cHardwareConfig();
-	virtual ~cHardwareConfig();
-
-	int32_t hwSettings[numberOfHwSettingsAddrs];
-	uint8_t bytestore[256];
-	void SetDefault();
-	void convertDesktopSpring();
-
+	DriveParameterTracker();
+	~DriveParameterTracker();
+	void reset();
+	void updateParameters(bool forced);
+	void addTrackedParameter(uint32_t SMAddr, uint32_t profileParameterAddr);
 private:
-	uint16_t ScaleAnalogAxis(uint16_t raw, bool invert, uint16_t minvalue, uint16_t maxvalue);
+	int32_t lastParameters[MAXPARAMETERS];
+	uint16_t parameterAddrs[MAXPARAMETERS];
+	uint32_t profileAddrs[MAXPARAMETERS];
+	int numberOfParameters;
+	bool setOnce;
 };
 
-#endif /* CHARDWARECONFIG_H_ */
+#endif /* DRIVEPARAMETERTRACKER_H_ */

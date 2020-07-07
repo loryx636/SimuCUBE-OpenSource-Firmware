@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2016-2018 Granite Devices Oy
+ * Copyright (c) 2016-2020 Granite Devices Oy
  * ---------------------------------------------------------------------------
  * This file is made available under the terms of Granite Devices Software
  * End-User License Agreement, available at https://granitedevices.com/legal
@@ -15,13 +15,6 @@
  * ---------------------------------------------------------------------------
 */
 
-/*
- * cHardwareConfig.cpp
- *
- *  Created on: Jan 30, 2017
- *      Author: Mika
- */
-
 #include "cHardwareConfig.h"
 
 cHardwareConfig::cHardwareConfig() {
@@ -35,18 +28,7 @@ cHardwareConfig::~cHardwareConfig() {
 
 void cHardwareConfig::SetDefault() {
 	// reset everything to zero here.
-	// pointers to objects have to be deleted.
-#if 0
-	mEncoderOffset = 0;
-	mEncoderCPR=0;
-	mDesktopSpringGain = 0;
-	mDesktopDamperGain = 0;
-	mDesktopAutoCenter = 0;
-	mStopsSpringGain = 0;
-	mStopsFrictionGain = 0;
-	mConfigDone = false;
-	invertSteeringValue = false;
-#endif
+#if 0 // defaults for 0.10 and earlier with old settings data format
 	mEncoderOffset = 0;
 	mEncoderCPR=0;
 
@@ -74,5 +56,28 @@ void cHardwareConfig::SetDefault() {
 	mAutoCommutationMode=0;
 	mAbsoluteEncoder=0;
 	variousSettingsBits=0;
+#endif
+	for(int i = 0; i< numberOfHwSettingsAddrs; i++) {
+		hwSettings[i]=0;
+	}
+	for(int j = 0; j<256; j++) {
+		bytestore[j]=0;
+	}
+	hwSettings[addrButtonDebounceMs]=5;
+	// the rest will be set at factory test bench or when user resets settings to default.
+	// Some of the settings are device dependent.
+	hwSettings[addrAutoConnectBLEDevice] = static_cast<int32_t>(ConnectAutomaticallyToWirelessWheel::ToAnyDevice);
 }
 
+
+void cHardwareConfig::convertDesktopSpring() {
+	/* this is called if flash included <0.50.0 version desktop spring settings, where
+	 * additional bit was used to toggle spring on/off  compared to 0.50 and up, where
+	 * desktop spring is always on, and 0 means off/no torque.
+	 */
+	if((hwSettings[addrVariousSettingsBits1]&(1<<bitDesktopAutoCenterEnabled)) == 0) {
+		// if tests against 0, so if not set, this is done:
+		hwSettings[addrDesktopSpringGain]=0;
+	}
+
+}

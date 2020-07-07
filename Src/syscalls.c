@@ -37,7 +37,8 @@
 
 #include "stm32f4xx_hal.h"
 
-extern UART_HandleTypeDef huart1;
+#include "hw_functions.h"
+
 /* Variables */
 #undef errno
 extern int errno;
@@ -90,9 +91,8 @@ int _write(int file, char *ptr, int len)
 
 	for (DataIdx = 0; DataIdx < len; DataIdx++)
 	{
-		HAL_UART_Transmit(&huart1, (uint8_t *)ptr, 1, 0xFFFF);
-	  // __io_putchar( *ptr++ );
-		*ptr++;
+		printfTransmit(ptr);
+		ptr++;
 	}
 	return len;
 }

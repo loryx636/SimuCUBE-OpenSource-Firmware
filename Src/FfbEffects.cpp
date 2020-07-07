@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2016-2018 Granite Devices Oy
+ * Copyright (c) 2016-2020 Granite Devices Oy
  * ---------------------------------------------------------------------------
  * This file is made available under the terms of Granite Devices Software
  * End-User License Agreement, available at https://granitedevices.com/legal
@@ -36,6 +36,15 @@ extern USBGameController joystick;
 
 extern uint64_t millis;
 
+
+#define FFBDEBUG 0
+#if FFBDEBUG
+#define ffbprintf(...) printf(__VA_ARGS__);
+#else
+#define ffbprintf(...)
+#endif
+
+
 float constantForceEffect(volatile cEffectState* effect) {
 
 
@@ -53,10 +62,8 @@ float constantForceEffect(volatile cEffectState* effect) {
 	gains = 1.0;
 #endif
 	float constantCommandFloat = (float)constantCommand;
-#ifdef ffbDebub4
-	printf("%d - %d - ", effect->magnitude, effect->gain);
-	printf("%f\r\n", constantCommandFloat);
-#endif
+	ffbprintf("%d - %d - ", effect->magnitude, effect->gain);
+	ffbprintf("%f\r\n", constantCommandFloat);
 	return constantCommandFloat;
 	//torquecommand+=(constantCommandFloat*gains);
 }
@@ -80,7 +87,6 @@ float squareEffect(volatile cEffectState* effect, uint8_t gain) {
 		out = effect->offset-effect->magnitude;
 	}
 	out = out*(float)gain/100.0f;
-	//torquecommand+=out;
 	return out;
 }
 
@@ -182,13 +188,6 @@ float springEffect(volatile cEffectState* effect, uint8_t gain) {
 
 	if(effect->state != MEffectState_Playing) return 0.0f;
 
-#ifdef ffbDebug3
-	//printf("spring command!\r\n");
-	printf("id,%d,spring,mag,%d,offset,%d,period,%d\r\n", id, ef->magnitude, ef->offset, ef->period);
-#endif
-	//printf("spring    eff mag %d, %d\r\n", ef->magnitude, ef->gain);
-	//torquecommand += constrain(SpringEffect(ef->offset - pos, (mag*mConfig.profileConfigs[currentprofileindex].mSpringGain) >> 7), -(ef->negativeSaturation << 8), ef->positiveSaturation << 8);
-
 	// pos is needed in axis units. Must use the one from last wheel pos update.
 	// pos is in 0-65535
 	// offset is -10000 - +10000
@@ -197,26 +196,22 @@ float springEffect(volatile cEffectState* effect, uint8_t gain) {
 	// * negative saturation is not used separately (commented out in the interface descriptor)
 	// * deadband is unsupported & not used (commented out in the interface descriptor)
 
-	// debugging with ETS2: spring effect gain doesn't change.
-	// magnitude? does not change either.
+	// debugging with ETS2:
+	// spring effect gain doesn't change.
+	// magnitude? DOES change according to car speed = basic ffb implementation of this game.
 
 	s32 offset = effect->offset;
 	offset+=10000; // 0-20000
 	s32 axisoffset = offset*65535/20000;
-	s32 err = axisoffset - joystick.gFFBDevice.axisPos;//+32768;
-	//s32 mag = ef->magnitude*mConfig.profileConfigs[currentprofileindex].mSpringGain/100;
-	//printf("%ld:%ld:%ld:%ld\r\n", err, ef->offset, ef->positiveSaturation, ef->magnitude);
-
+	s32 err = axisoffset - joystick.gFFBDevice.angle.getAxisPos();
 	float spring = (float)err*10000.0f/32768.0f*255.0f;  // this scales effect to have full max force
-	//spring = constrain(spring, -2550000, 2550000);
 	int32_t spring_int=spring;
 	spring_int=constrain(spring_int, -2550000, 2550000);
 	spring = (float)spring_int*(float)gain/100.0f;
-	//printf("%ld,%ld\r\n", err, spring);
-	//torquecommand+= (float)err*10000/32768
+	// spring effect has also magnitude that goes from -1 to 127 (0x80 - 0x7F in descriptor).
+	spring = spring*(float)effect->magnitude/128.0f;
 	float torquecommand=-(float)spring;
 	return torquecommand;
-	//printf("%d;%d\r\n", spring_int,pos);
 }
 
 float sawtoothUpEffect(volatile cEffectState* effect, uint8_t gain) {
@@ -242,146 +237,59 @@ float sawtoothUpEffect(volatile cEffectState* effect, uint8_t gain) {
 	//break;
 }
 
-#if 1
-float frictionEffect(s32 *readencoderpos, float cntsperinverse, uint32_t cpr, volatile cEffectState* effect, uint8_t gain) {
+float frictionEffect(int32_t readencoderpos, uint32_t cpr, volatile cEffectState* effect, uint8_t gain) {
+
 
 	if(effect->state != MEffectState_Playing) return 0.0f;
-
+	//printf("friction,mag:%d,offset:%d,period:%d,gain:%d,possat:%d,negsat:%d\r\n", effect->magnitude, effect->offset, effect->period, effect->gain, effect->positiveSaturation, effect->negativeSaturation);
     float frictionDistanceTurns = (float)effect->magnitude/256.0f;//=0.0030;//turns from 0% to 100% torque in   friction effect // from game
     int frictionDistanceCounts=cpr*frictionDistanceTurns;
     static int frictionLockPosFB=0;
 
-    int frictionDiff=*readencoderpos-frictionLockPosFB;
+    int frictionDiff = readencoderpos-frictionLockPosFB;
 
     if( frictionDiff > frictionDistanceCounts )
     {
-        frictionLockPosFB=*readencoderpos-frictionDistanceCounts;
+        frictionLockPosFB = readencoderpos-frictionDistanceCounts;
         frictionDiff=frictionDistanceCounts;
     }
     else if( frictionDiff < -frictionDistanceCounts )
     {
-        frictionLockPosFB=*readencoderpos+frictionDistanceCounts;
+        frictionLockPosFB = readencoderpos+frictionDistanceCounts;
         frictionDiff=-frictionDistanceCounts;
     }
 
-    float frictionTorq=float(frictionDiff)*cntsperinverse*(float)gain;// do not divide this by /100.0; !!!!
+    float frictionTorq = (float)frictionDiff * (1.0f/(float)cpr) * (float)gain;// do not divide this by /100.0; !!!!
 
-    //printf("%f\r\n", frictionTorq);
     frictionTorq = joystick.gFFBDevice.frictionForceLPF.process(frictionTorq);
     return frictionTorq;// 0.0;//frictionTorq;
-
-	//stat = smSetParameter(mSMBusHandle, 1, SMP_TORQUE_EFFECT_FRICTION, (mag*mConfig.profileConfigs[currentprofileindex].mFrictionGain) >> 3);
-}
-#endif
-#if 0
-float cFFBDevice::frictionEffect(s32 *readencoderpos, float cntsperinverse, uint32_t cpr, volatile cEffectState* effect) {
-	ffbEffectUsage |= (1<<FrictionEffectBit); updateEffectCounters((s32)effect->magnitude, FrictionEffectBit);
-	if(effect->state != MEffectState_Playing) return 0.0f;
-	float frictionCoeff = (float)effect->magnitude;
-
-}
-#endif
-float calcDamperEffectGain(volatile cEffectState *effect, uint8_t gain) {
-
-
-	if(effect->state != MEffectState_Playing) return 0.0f;
-#ifdef ffbDebug3
-	printf("id,%d,damper\r\n",id);
-#endif
-	//cumul_damper+=(mag*mConfig.profileConfigs[currentprofileindex].mDamperGain) >> 8;
-	/*
-	 * 		effect->magnitude = (s16)data->positiveCoefficient; int16_t
-			effect->offset = data->cpOffset; int16_t
-			effect->positiveSaturation = data->positiveSaturation; uint8_t
-			effect->negativeSaturation = data->negativeSaturation; uint8_t */
-	//printf("mag %d, off %d, pos %d, neg %d\r\n", ef->magnitude, ef->offset, ef->positiveSaturation, ef->negativeSaturation);
-	//dampingEffectGain scale same as in simplemotion, 100=1% -> 0-10000 = 0-100%
-	// magnitude = (s16)data->positiveCoefficient;
-	float dampingEffectGain = (float)effect->magnitude/127.0f; // max is 0x7F = 127 dec
-	dampingEffectGain = dampingEffectGain*(float)gain/100.0f;
-	//dampingEffectGain = dampingEffectGain*-1;
-	//printf("damping mag %d\r\n", effect->magnitude);
-	return dampingEffectGain;
-
 }
 
-float calcDampingEffect(float gain, volatile cEffectState *effect) {
-	float force = 0.0f;
-	//int16_t loffset=effect->offset;
-	// deadband not supported
-	// int16_t ldeadband = effect->
-	int16_t lPositiveCoefficient = effect->magnitude;
-	// negative coefficient not supported
-	//int16_t lNegativeCoefficient = effect->
-	//int16_t dwPositiveSaturation = effect->positiveSaturation;
-	//int16_t dwNegativeSaturation = effect->negativeSaturation;
+float calcDampingEffect(uint8_t gain, float speed, volatile cEffectState *effect, Biquad1StOrder& lpf) {
 
-	force = gain*(float)(lPositiveCoefficient)*joystick.gFFBDevice.axisSpeedPerMs*256.0f;
-	force = joystick.gFFBDevice.dampingForceLPF.process(force);
-	return force;
+	// this smells funny but might not be totally wrong, as the scaling is usually 255 * 100, here it is 255 * 127
+	// max is 0x7F = 127 dec
+
+	// sounds wrong but it is to the right direction, as all of our forces are eventually negated, this
+	// force in the direction of speed is damping it.
+	const float force = (float)gain/100.0f * (float)effect->magnitude/127.0f * (float)effect->magnitude * speed * 256.0f;
+
+	return lpf.process(force);
 }
 
-#if 0
-float cFFBDevice::desktopSpringEffect() {
-	//torquecommand += SpringEffect(-pos, mConfig.hardwareConfig.mDesktopSpringGain);
-	//cumul_damper += mConfig.hardwareConfig.mDesktopDamperGain;
-	s32 axisoffset = 32767;
-	s32 err = axisoffset - axisPos;//+32768;
-	float spring = (float)err*10000.0f/32768.0f*255.0f;  // this scales effect to have full max force
-	//int32_t spring_int=spring;
-	float saturation = 2550000.0*(float)mConfig.hardwareConfig.mDesktopSpringSaturation/100.0f;
-
-	//spring_int=constrain(spring_int, -2550000, 2550000);
-	//spring = (float)spring_int*(float)mConfig.hardwareConfig.mDesktopSpringGain/100.0f;
-	spring = spring*(float)mConfig.hardwareConfig.mDesktopSpringGain/100.0f;
-#if 1
-	if(spring > 0.0) {
-		spring = constrain(spring, 0, saturation);
-	} else {
-		spring = constrain(spring, -1.0f*saturation, 0);
-	}
-#endif
-	//printf("%d ", (int)spring);
-	//spring = spring;// - desktopDampingLPF.process1stOrder(wheelSpeedCount*(float)mConfig.hardwareConfig.mDesktopDamperGain*10.0f);
-	//printf("%d\r\n", (int)spring);
-	float torquecommand=-spring;
-	//printf("%f   %f\r\n",spring,saturation);
-	return desktopDampingLPF.process1stOrder(torquecommand);
-}
-#endif
-
-#if 0
-float cFFBDevice::frictionEffect(cEffectState* effect) {
-
-}
-#endif
-
-float desktopSpringEffect(uint8_t saturation, uint8_t gain) {
-	//torquecommand += SpringEffect(-pos, mConfig.hardwareConfig.mDesktopSpringGain);
-	//cumul_damper += mConfig.hardwareConfig.mDesktopDamperGain;
-	//s32 axisoffset = 32767;
-	float err = joystick.gFFBDevice.steeringAngleUnlimited;
-	err=constrain(joystick.gFFBDevice.steeringAngleUnlimited, -900.0, 900.0);
-	float spring = err*10000.0f/900.0f*255.0f;  // this scales effect to have full max force
-	//int32_t spring_int=spring;
-	float saturationFloat = 2550000.0*(float)saturation/100.0f;
-
-	//spring_int=constrain(spring_int, -2550000, 2550000);
-	//spring = (float)spring_int*(float)mConfig.hardwareConfig.mDesktopSpringGain/100.0f;
+#define MAX_DESKTOP_SPRING_FORCE_AT_ANGLE 600.0f
+float desktopSpringEffect(uint8_t gain) {
+	/* use a defined MAX_DESKTOP_SPRING_FORCE_AT_ANGLE angle where the desktop centering spring will give maximum torque, so that the effect
+	 * is consistant and does not depend on user's steering angle setting.
+	 * Todo: try make it also consistent regardless of the current power level of the system and to drive the
+	 * wheel in to center even if the force produced here is not enough in itself to do so.
+	 */
+	float err=fmax(-MAX_DESKTOP_SPRING_FORCE_AT_ANGLE, fmin(MAX_DESKTOP_SPRING_FORCE_AT_ANGLE, joystick.gFFBDevice.angle.getUnlimitedSteeringAngle()));
+	float spring = err*10000.0f/MAX_DESKTOP_SPRING_FORCE_AT_ANGLE*255.0f;  // this scales effect to have full max force at 600 degrees
 	spring = spring*(float)gain/100.0f;
-#if 1
-	if(spring > 0.0) {
-		spring = constrain(spring, 0, saturationFloat);
-	} else {
-		spring = constrain(spring, -1.0f*saturationFloat, 0);
-	}
-#endif
-	//printf("%d ", (int)spring);
-	//spring = spring;// - desktopDampingLPF.process1stOrder(wheelSpeedCount*(float)mConfig.hardwareConfig.mDesktopDamperGain*10.0f);
-	//printf("%d\r\n", (int)spring);
 	float torquecommand=spring;
-	//printf("%f   %f\r\n",spring,saturation);
-	return joystick.gFFBDevice.desktopDampingLPF.process(torquecommand);
+	spring = joystick.gFFBDevice.desktopDampingLPF.process(spring);
+	return spring;
 }
 
 float irFFBEffects() {
@@ -394,40 +302,10 @@ float irFFBEffects() {
 	float constantCommand = (s32)joystick.gFFBDevice.latestIRFFBForce[0]*255;  // 0 = latest.
 	//calculate gains based on the current profile percentages:
 	//mConstantGain/100*mMainGain/100;
-	float gains = (float)joystick.gFFBDevice.mConfig.profileConfigs[joystick.gFFBDevice.currentprofileindex].mMainGain/100.0f;
+	float gains = (float)joystick.gFFBDevice.mConfig.profileConfigs[joystick.gFFBDevice.currentprofileindex].settings[addrMainGain]/100.0f;
 	float constantCommandFloat = (float)constantCommand;
 
 	float torquecommand=(constantCommandFloat*gains);
 	return torquecommand;
 
-}
-
-float endstopEffect(float speed) {
-	float endstopGain = 0.0;  // 0.0 - 1.0
-	float endstopMaxTorque = 0.0; // 0 - 10000 * 255, same scale as other forces
-	float endstopTorque_Dampened = 0.0;
-	float endstopDampingGain = (float)joystick.gFFBDevice.mConfig.hardwareConfig.mStopsDamperGain/100.0;
-	if(joystick.gFFBDevice.mConfig.hardwareConfig.mStopsEnabled == 1) {
-		if(joystick.gFFBDevice.degrees_from_endstop < (float)joystick.gFFBDevice.mConfig.hardwareConfig.mStopsRangeDegrees) {
-			if(joystick.gFFBDevice.degrees_from_endstop < 0.00f) {
-				joystick.gFFBDevice.degrees_from_endstop = 0.0f;
-			}
-			endstopGain = ((float)joystick.gFFBDevice.mConfig.hardwareConfig.mStopsRangeDegrees-joystick.gFFBDevice.degrees_from_endstop)/(float)joystick.gFFBDevice.mConfig.hardwareConfig.mStopsRangeDegrees;
-			if(endstopGain < 0.000f) endstopGain = 0.0f;
-			endstopMaxTorque = (float)joystick.gFFBDevice.mConfig.hardwareConfig.mStopsMaxForce*100.0f*255.0f; // to be in the same scale as the other forces
-			}
-
-		if(joystick.gFFBDevice.endstopDirection) { // turning to right
-			endstopTorque_Dampened = endstopGain*endstopMaxTorque-joystick.gFFBDevice.wheelSpeed*endstopMaxTorque*endstopDampingGain;
-			//endstopTorque_Dampened = endstopMaxTorque*(endstopGain-wheelSpeed*endstopGain);
-			//endstopTorque_Dampened = endstopMaxTorque*(endstopGain*(1.0-dampergain*wheelSpeed));
-
-		}
-		else {
-			endstopTorque_Dampened = -endstopGain*endstopMaxTorque-speed*endstopMaxTorque*endstopDampingGain;
-			//endstopTorque_Dampened = endstopMaxTorque*(-endstopGain*(1.0-dampergain*wheelSpeed));
-		}
-		return joystick.gFFBDevice.endStopDampingLPF.process(endstopTorque_Dampened);
-	}
-	return 0.0;
 }

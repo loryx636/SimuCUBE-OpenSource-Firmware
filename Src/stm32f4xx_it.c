@@ -67,6 +67,7 @@ extern TIM_HandleTypeDef htim2_usbwaitdelay;
 extern TIM_HandleTypeDef htim3_watchdogwaitdelay;
 extern TIM_HandleTypeDef htim4_effecttimer;
 extern TIM_HandleTypeDef htim5_usbsuspenddelay;
+extern TIM_HandleTypeDef htim7_250msledclock;
 
 
 /******************************************************************************/
@@ -282,7 +283,7 @@ void DMA2_Stream2_IRQHandler(void)
   /* USER CODE BEGIN DMA2_Stream2_IRQn 0 */
 
   /* USER CODE END DMA2_Stream2_IRQn 0 */
-  HAL_DMA_IRQHandler(&hdma_adc2);
+  //HAL_DMA_IRQHandler(&hdma_adc2);
   /* USER CODE BEGIN DMA2_Stream2_IRQn 1 */
 
   /* USER CODE END DMA2_Stream2_IRQn 1 */
@@ -339,6 +340,17 @@ void TIM5_IRQHandler(void)
 
   /* USER CODE END TIM2_IRQn 0 */
   HAL_TIM_IRQHandler(&htim5_usbsuspenddelay);
+  /* USER CODE BEGIN TIM2_IRQn 1 */
+
+  /* USER CODE END TIM2_IRQn 1 */
+}
+
+void TIM7_IRQHandler(void)
+{
+  /* USER CODE BEGIN TIM2_IRQn 0 */
+
+  /* USER CODE END TIM2_IRQn 0 */
+  HAL_TIM_IRQHandler(&htim7_250msledclock);
   /* USER CODE BEGIN TIM2_IRQn 1 */
 
   /* USER CODE END TIM2_IRQn 1 */

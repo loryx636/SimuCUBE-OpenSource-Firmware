@@ -23,11 +23,13 @@
 
 /* USER CODE BEGIN Includes */
 #include "stdio.h"
+#ifndef WIN32
+#include "fw_version.h"
+#endif
 
 /* USER CODE END Includes */
 
 /* Private define ------------------------------------------------------------*/
-
 #define X12_LOWER_1_Pin GPIO_PIN_2
 #define X12_LOWER_1_GPIO_Port GPIOE
 #define X12_LOWER_2_Pin GPIO_PIN_3
@@ -154,6 +156,27 @@
 #define X12_LOWER_3_GPIO_Port GPIOE
 /* USER CODE BEGIN Private defines */
 
+#define NUM_ADC_CHANNELS 13
+#define ADC_NUM_AVERAGING 32
+#define ADC1_BUFFER_LENGTH NUM_ADC_CHANNELS*ADC_NUM_AVERAGING
+
+#define X11_upper_1 1  //adc1_chan9 (brake)
+#define X11_upper_2 2  //adc1_chan8 (gas)
+#define X11_upper_3 3  //adc1_chan15
+#define X11_upper_5 4  //adc1_chan14 (clutch)
+#define X11_upper_6 5  //adc1_chan7
+
+#define X11_lower_2 6  //adc1_chan13
+#define X11_lower_3 7  //adc1_chan3
+#define X11_lower_5 8  //adc1_chan4
+#define X11_lower_6 9  //adc1_chan5
+#define X11_lower_7 10  //adc1_chan6
+
+#define ex_pot_1    11  //adc1_chan12
+#define ex_pot_2    12  //adc1_chan11
+#define ex_pot_3    13  //adc1_chan10
+
+#define IONI_FW_VER 10716
 /* USER CODE END Private defines */
 
 /**
@@ -163,6 +186,5 @@
 /**
   * @}
 */ 
-
 #endif /* __MAIN_H */
 

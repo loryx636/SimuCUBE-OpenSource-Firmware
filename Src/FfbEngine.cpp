@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2016-2018 Granite Devices Oy
+ * Copyright (c) 2016-2020 Granite Devices Oy
  * ---------------------------------------------------------------------------
  * This file is made available under the terms of Granite Devices Software
  * End-User License Agreement, available at https://granitedevices.com/legal
@@ -34,28 +34,30 @@
 //#include "command.h"
 #include "eventLog.h"
 
-//#define ffbDebug1 1
-//#define ffbDebug2 1
 extern bool debugMode;
 extern USBGameController joystick;
 extern uint64_t millis;
 extern eventLog simucubelog;
 
+#define FFBENGINEDEBUG 0
+#if FFBENGINEDEBUG
+#define ffbprintf(...) printf(__VA_ARGS__);
+#else
+#define ffbprintf(...)
+#endif
+
+
 FfbEngine::FfbEngine() {
 	FreeAllEffects();
-	printf("..\r\n");
 }
 
 FfbEngine::~FfbEngine() {
 	// Auto-generated destructor stub
 }
 
-#define LEDs_SetAllLEDs(l)
-
-volatile cEffectState* FfbEngine::getEffectState(u8 id) {
+volatile cEffectState* FfbEngine::getEffectState(uint8_t id) {
 	return &gEffectStates[id];
 }
-
 
 void FfbEngine::SendPidStateForEffect(uint8_t eid, uint8_t effectState)
 {
@@ -66,20 +68,14 @@ void FfbEngine::SendPidStateForEffect(uint8_t eid, uint8_t effectState)
 
 uint8_t FfbEngine::GetNextFreeEffect(void)
 {
-
-#ifdef ffbDebug1
-	printf("find free eff\r\n");
-#endif
 	simucubelog.addEvent(FFB_FindFreeEffect, true);
+	ffbprintf("find free eff\r\n");
 	// Find the next free effect ID for next time
-	for (u8 i = FIRST_EID; i <= MAX_EFFECTS; i++)
+	for (uint8_t i = FIRST_EID; i <= MAX_EFFECTS; i++)
 	{
 		if (gEffectStates[i].state == MEffectState_Free)
 		{
-#ifdef ffbDebug1
-	printf("next free eff: %d\r\n", i);
-#endif
-			//printf("4\r\n");
+			ffbprintf("found free eff %d\r\n", i);
 			simucubelog.addEventParam(FFB_FoundFreeEffectSlot, i, true);
 			gEffectStates[i].state = MEffectState_Allocated;
 			return i;
@@ -90,28 +86,18 @@ uint8_t FfbEngine::GetNextFreeEffect(void)
 
 void FfbEngine::StopAllEffects(void)
 {
-#ifdef ffbDebug1
-	printf("stopalleffs\r\n");
-#endif
 	simucubelog.addEvent(FFB_StopAllEffects, true);
-	//SetTorque(0);
-	for (uint8_t id = FIRST_EID; id <= MAX_EFFECTS; id++)
-
+	ffbprintf("stop all\r\n");
+	for (uint8_t id = FIRST_EID; id <= MAX_EFFECTS; id++) {
 		StopEffect(id);
-
+	}
 }
 
 void FfbEngine::StartEffect(uint8_t id)
 {
-#ifdef ffbDebug1
-	printf("st eff %d\r\n",id);
-
-#endif
 	simucubelog.addEventParam(FFB_StartEffect, id, true);
-	if ((id > MAX_EFFECTS) || (gEffectStates[id].state==MEffectState_Free)) {
-#ifdef ffbDebug1
-		printf("too high effectid or not allocated\r\n");
-#endif
+	ffbprintf("start eff %d\r\n", id);
+	if ((id == 0) || (id > MAX_EFFECTS) || (gEffectStates[id].state == MEffectState_Free)) {
 		simucubelog.addEventParam(FFB_InvalidEffect, id, true);
 		return;
 	}
@@ -122,43 +108,29 @@ void FfbEngine::StartEffect(uint8_t id)
 
 void FfbEngine::StopEffect(uint8_t id)
 {
-#ifdef ffbDebug1
-	printf("stop eff %d\r\n",id);
-#endif
 	simucubelog.addEventParam(FFB_StopEffect, id, true);
-	if ((id > MAX_EFFECTS) || (gEffectStates[id].state == 0))
+	ffbprintf("stop eff %d\r\n", id);
+	if ((id > MAX_EFFECTS) || (gEffectStates[id].state == 0)) {
 		return;
-	//gEffectStates[id].state &= ~MEffectState_Playing;
+	}
 	gEffectStates[id].state = MEffectState_Allocated;
 }
 
 void FfbEngine::FreeEffect(uint8_t id)
 {
 	simucubelog.addEventParam(FFB_FreeEffect, id, true);
-#ifdef ffbDebug1
-
-#endif
-	if (id > MAX_EFFECTS)
+	ffbprintf("free eff %d\r\n", id);
+	if (id == 0 || id > MAX_EFFECTS) {
 		return;
-
-	//debugPrint(DMid, "Free effect id %d",id);
-	//LogBinaryLf(&id,1);
+	}
 	gEffectStates[id].state = MEffectState_Free;
 }
 
 void FfbEngine::FreeAllEffects(void)
 {
-	//SetTorque(0);
-#ifdef ffbDebug1
-	printf("fr allr\n");
-#endif
 	simucubelog.addEvent(FFB_FreeAllEffects, true);
-	//LogTextLf("Free All effects");
- 	//memset((void*) gEffectStates, 0, sizeof(gEffectStates));
-	for(int i=FIRST_EID; i< MAX_EFFECTS; i++) {
-		if(i==1) {
-			//printf("??\r\n");
-		}
+	ffbprintf("free all eff\r\n");
+	for(int i=FIRST_EID; i <= MAX_EFFECTS; i++) {
 		gEffectStates[i].attackLevel = 0;
 		gEffectStates[i].attackTime = 0;
 		gEffectStates[i].counter = 0;
@@ -184,14 +156,9 @@ void FfbEngine::FreeAllEffects(void)
 
 
 // Handle incoming data from USB
-bool FfbEngine::handleReceivedHIDReport(HID_REPORT report)
+bool FfbEngine::handleReceivedHIDReport(const uint8_t* data)
 {
-	u8 *data = report.data;
 	uint8_t effectId = data[1]; // effectBlockIndex is always the second byte.
-#ifdef ffbDebug1
-	//printf("HID FFB input rep\r\n");
-#endif
-
 
 	// if got this far (wasn't a simucube-specific command)
 	// check for ffb report and handle them.
@@ -199,85 +166,58 @@ bool FfbEngine::handleReceivedHIDReport(HID_REPORT report)
 	switch (data[0])	// reportID
 	{
 	case 1:
-#ifdef ffbDebug1
-		printf("SEFF:");
-#endif
+		ffbprintf("seteff\r\n");
 		FfbHandle_SetEffect((USB_FFBReport_SetEffect_Output_Data_t *) data);
-
 		break;
 	case 2:
-#ifdef ffbDebug1
-		printf("ENVCMD\r\n");
-#endif
+		ffbprintf("setenv\r\n");
 		SetEnvelope((USB_FFBReport_SetEnvelope_Output_Data_t*) data, effectId);
 		break;
 	case 3:
-#ifdef ffbDebug1
-		printf("SCOND:");
-#endif
+		ffbprintf("setcnd\r\n");
 		SetConditional((USB_FFBReport_SetCondition_Output_Data_t*) data, effectId);
 		break;
 	case 4:
-#ifdef ffbDebug1
-		printf("SPER\r\n");
-#endif
+		ffbprintf("setper\r\n");
 		SetPeriodic((USB_FFBReport_SetPeriodic_Output_Data_t*) data, effectId);
 		break;
 	case 5:
-	{
+		//ffbprintf("setcon\r\n");
 		SetConstantForce((USB_FFBReport_SetConstantForce_Output_Data_t*) data, effectId);
 		break;
-	}
 	case 6:
-#ifdef ffbDebug1
-		printf("SRAMP\r\n");
-#endif
+		ffbprintf("setrmp\r\n");
 		SetRampForce((USB_FFBReport_SetRampForce_Output_Data_t*)data, effectId);
 		break;
 	case 7:
-#ifdef ffbDebug1
-		printf("SCUSFDT\r\n");
-#endif
+		ffbprintf("setcust\r\n");
 		FfbHandle_SetCustomForceData((USB_FFBReport_SetCustomForceData_Output_Data_t*) data);
 		break;
 	case 8:
-#ifdef ffbDebug1
-		printf("SDWNLDFSMP\r\n");
-#endif
+		ffbprintf("setdl\r\n");
 		FfbHandle_SetDownloadForceSample((USB_FFBReport_SetDownloadForceSample_Output_Data_t*) data);
 		break;
-	case 9:
-#ifdef ffbDebug1
-		printf("C9donothing\r\n");
-#endif
-		break;
 	case 10:
-#ifdef ffbDebug1
-		printf("EFOP\r\n");
-#endif
+		ffbprintf("seteffop\r\n");
 		FfbHandle_EffectOperation((USB_FFBReport_EffectOperation_Output_Data_t*) data);
 		break;
 	case 11:
-#ifdef ffbDebug1
-		printf("BLFR\r\n");
-#endif
+		ffbprintf("setblkfree\r\n");
 		FfbHandle_BlockFree((USB_FFBReport_BlockFree_Output_Data_t *) data);
 		break;
 	case 12:
-#ifdef ffbDebug1
-		printf("DC\r\n");
-#endif
+		ffbprintf("setdevctrl\r\n");
 		FfbHandle_DeviceControl((USB_FFBReport_DeviceControl_Output_Data_t*) data);
 		break;
 	case 13:
-#ifdef ffbDebug1
-		printf("DG\r\n");
-#endif
+		ffbprintf("setgain\r\n");
 		FfbHandle_DeviceGain((USB_FFBReport_DeviceGain_Output_Data_t*) data);
 		break;
 	case 14:
+		ffbprintf("setcustom\r\n");
 		FfbHandle_SetCustomForce((USB_FFBReport_SetCustomForce_Output_Data_t*) data);
 		break;
+	case 9: // no idea why 9 is noop
 	default:
 		break;
 	}
@@ -286,36 +226,22 @@ bool FfbEngine::handleReceivedHIDReport(HID_REPORT report)
 
 void FfbEngine::FfbOnCreateNewEffect (USB_FFBReport_CreateNewEffect_Feature_Data_t* inData, USB_FFBReport_PIDBlockLoad_Feature_Data_t *outData)
 {
-	outData->reportId = 6;//2;//= 6;
-	//printf("3\r\n");
+	outData->reportId = 6;
+	// some operations happen directly from the interrupt handler
+	// for some reason, so block interrupts to "lock" an effect index
 	__disable_irq();
 	outData->effectBlockIndex = GetNextFreeEffect();
 	__enable_irq();
-	//printf("5\r\n");
-	if (outData->effectBlockIndex == 0)
-	{
+	if (outData->effectBlockIndex == 0) {
 		outData->loadStatus = 2;	// 1=Success,2=Full,3=Error
-		//LogText("Could not create effect");
 		simucubelog.addEvent(FFB_MemFull, true);
-	}
-	else
-	{
+	} else {
 		outData->loadStatus = 1;	// 1=Success,2=Full,3=Error
-		printf("new eff: slot %d, type: %d\r\n", outData->effectBlockIndex, inData->effectType);
 		simucubelog.addEventParam(FFB_CreatedNewEffect, inData->effectType, true);
-#ifdef ffbDebug1
-		printf("new eff: slot %d, type: %d\r\n", outData->effectBlockIndex, inData->effectType);
-#endif
-		//printf("7\r\n");
+		ffbprintf("new eff: slot %d type %d\r\n", outData->effectBlockIndex, inData->effectType);
 		CreateNewEffect(inData, outData->effectBlockIndex);
-		//printf("8\r\n");
-		//LogText("Created effect ");
-		//LogBinary(&outData->effectBlockIndex,1);
-		//LogText(", type ");
-		//LogBinaryLf(&inData->effectType,1);
 	}
 	outData->ramPoolAvailable = 0x01FF;//0xFFFF;	// =0 or 0xFFFF - don't really know what this is used for?
-//	WaitMs(5);
 }
 
 void FfbEngine::FfbHandle_SetEffect(USB_FFBReport_SetEffect_Output_Data_t *data)
@@ -325,11 +251,8 @@ void FfbEngine::FfbHandle_SetEffect(USB_FFBReport_SetEffect_Output_Data_t *data)
 
 void FfbEngine::FfbOnPIDPool(USB_FFBReport_PIDPool_Feature_Data_t *data)
 {
-#ifdef ffbDebug1
-	printf("ONPDPL\r\n");
-#endif
+	ffbprintf("ffb: onpidpool\r\n");
 	FreeAllEffects();
-	printf("**\r\n");
 	data->reportId = 7;
 	data->ramPoolSize = 0xFFFF;
 	data->maxSimultaneousEffects = MAX_EFFECTS;
@@ -338,38 +261,39 @@ void FfbEngine::FfbOnPIDPool(USB_FFBReport_PIDPool_Feature_Data_t *data)
 
 void FfbEngine::FfbHandle_SetCustomForceData(USB_FFBReport_SetCustomForceData_Output_Data_t *data)
 {
-	//debugPrint(DMid, "SetCustomForceData");
+
 }
 
 void FfbEngine::FfbHandle_SetDownloadForceSample(USB_FFBReport_SetDownloadForceSample_Output_Data_t *data)
 {
-	//debugPrint(DMid, "SetDownloadForceSample");
+
 }
 
 void FfbEngine::FfbHandle_EffectOperation(USB_FFBReport_EffectOperation_Output_Data_t *data)
 {
 	uint8_t eid = data->effectBlockIndex;
 
-	if (eid == 0xFF)
+	if (eid == 0xFF) {
 		eid = 0x7F;	// All effects
+	}
 
-	if (data->operation == 1)
-	{	// Start
-		//debugPrint(DLow,"Start effect id %d",eid);
-		StartEffect(eid);
-	}
-	else if (data->operation == 2)
-	{	// StartSolo
-		// Stop all first
-		//debugPrint(DLow,"Start solo effect id %d",eid);
-		StopAllEffects();
-		// Then start the given effect
-		StartEffect(eid);
-	}
-	else if (data->operation == 3)
-	{	// Stop
-		//debugPrint(DLow,"Stop effect id %d",eid);
-		StopEffect(eid);
+	switch (data->operation) {
+	case 1:
+	    // start all or one ... except that the StartEffect does not support such operation
+	    StartEffect(eid);
+	    break;
+	case 2:
+	    // start solo
+	    StopAllEffects();
+	    StartEffect(eid);
+	    break;
+	case 3:
+	    // stop
+	    StopEffect(eid);
+	    break;
+	default:
+	    // not handled
+	    break;
 	}
 }
 
@@ -378,20 +302,10 @@ void FfbEngine::FfbHandle_BlockFree (USB_FFBReport_BlockFree_Output_Data_t *data
 {
 	uint8_t eid = data->effectBlockIndex;
 
-	if (eid == 0xFF)
-	{	// all effects
-#ifdef ffbDebug1
-		printf("BLCK_FRALL\r\n");
-#endif
+	if (eid == 0xFF) {
+		ffbprintf("freeall\r\n");
 		FreeAllEffects();
-		printf(",,\r\n");
-// 		FreeEffect(0x7f); // Question: does this work with the wheel?
-	}
-	else
-	{
-		if(eid==1) {
-			asm("nop");
-		}
+	} else {
 		FreeEffect(eid);
 	}
 }
@@ -402,12 +316,8 @@ void FfbEngine::FfbHandle_BlockFree (USB_FFBReport_BlockFree_Output_Data_t *data
 #define ACTUATOR_OVERRIDE		0x08
 #define ACTUATOR_POWER			0x10
 
-
 void FfbEngine::FfbHandle_DeviceControl(USB_FFBReport_DeviceControl_Output_Data_t *data)
 {
-	//	LogTextP(PSTR("Device Control: "));
-
-	uint8_t control = data->control;
 	// 1=Enable Actuators, 2=Disable Actuators, 3=Stop All Effects, 4=Reset, 5=Pause, 6=Continue
 
 	// PID State Report:
@@ -416,69 +326,53 @@ void FfbEngine::FfbHandle_DeviceControl(USB_FFBReport_DeviceControl_Output_Data_
 	//	uint8_t	effectBlockIndex;	// Bit7=Effect Playing, Bit0..7=EffectId (1..40)
 
 	pidState.reportId = 2;
-	Bset(pidState.status,SAFETY_SWITCH);
-	Bset(pidState.status,ACTUATOR_POWER);
+	Bset(pidState.status, SAFETY_SWITCH);
+	Bset(pidState.status, ACTUATOR_POWER);
 	pidState.effectBlockIndex = 0;
 
-	switch (control)
+	switch (data->control)
 	{
 	case 0x01:
-		//LogTextLf("Disable Actuators");
-		Bclr(pidState.status,ACTUATORS_ENABLED);
+	    // disable actuators
+	    Bclr(pidState.status, ACTUATORS_ENABLED);
 		break;
 	case 0x02:
-		//LogTextLf("Enable Actuators");
-		Bset(pidState.status,ACTUATORS_ENABLED);
+	    // enable actuators
+		Bset(pidState.status, ACTUATORS_ENABLED);
 		break;
 	case 0x03:
-		//LogTextLf("Stop All Effects");		// Disable auto-center spring and stop all effects
+		// Disable auto-center spring and stop all effects
 		SetAutoCenter(0);
-		pidState.effectBlockIndex = 0;
 		break;
 	case 0x04:
-		//LogTextLf("Reset");			// Reset (e.g. FFB-application out of focus)
-		//SetAutoCenter(1);		// Enable auto-center spring and stop all effects
-//		WaitMs(75);
-#ifdef ffbDebug1
-		printf("DCTRL_FREE\r\n");
-#endif
+		// Reset (e.g. FFB-application out of focus)
+		ffbprintf("ffb devcntrl free\r\n");
 		FreeAllEffects();
-#ifdef ffbDebug1
-		printf("--\r\n");
-#endif
 		break;
 	case 0x05:
-		//LogTextLf("Pause");
-		Bset(pidState.status,DEVICE_PAUSED);
+		// pause
+		Bset(pidState.status, DEVICE_PAUSED);
 		break;
 	case 0x06:
-		//LogTextLf("Continue");
-		Bclr(pidState.status,DEVICE_PAUSED);
+		// continue
+		Bclr(pidState.status, DEVICE_PAUSED);
 		break;
 	default:
-		//LogTextP(PSTR("Other "));
-		//LogBinaryLf(&data->control,1);
-		asm("nop");
+	    return;
 	}
 }
 
 void FfbEngine::FfbHandle_DeviceGain(USB_FFBReport_DeviceGain_Output_Data_t *data)
 {
-	//LogTextP(PSTR("Device Gain: "));
-	//LogBinaryLf(&data->gain, 1);
-	//printf("g %d\r\n", data->gain);
 	joystick.gFFBDevice.ffbDevGain = data->gain;
 	simucubelog.addEventParam(FFB_SetGain, data->gain, true);
 }
 
 void FfbEngine::FfbHandle_SetCustomForce(USB_FFBReport_SetCustomForce_Output_Data_t *data)
 {
-	//LogTextLf("Set Custom Force");
-//	LogBinary(&data, sizeof(USB_FFBReport_SetCustomForce_Output_Data_t));
 }
 
 
-//from FFB_PRO
 void FfbEngine::SetAutoCenter(uint8_t enable)
 {
 }
@@ -501,180 +395,67 @@ void FfbEngine::ModifyDuration(uint8_t effectId, uint16_t duration)
 	effect->duration = duration;
 	effect->counter = 0;
 	effect->fade_start_time = duration - effect->fadeTime;
-
-	//debugPrint(DMid,"ModifyDuration eid=%d %d %d %d",effectId,effect->duration, effect->counter, effect->fade_start_time);
 }
 
 void FfbEngine::SetEnvelope (USB_FFBReport_SetEnvelope_Output_Data_t* data, int effectId)
 {
-	volatile cEffectState* effect=&gEffectStates[effectId];
+	volatile cEffectState* effect = &gEffectStates[effectId];
 	effect->attackLevel = data->attackLevel;
 	effect->fadeLevel = data->fadeLevel;
 	effect->attackTime = data->attackTime;
 	effect->fadeTime = data->fadeTime;
-	//debugPrint(DMid,"SetEnvelope eid=%d %d %d %d %d",effectId,data->attackLevel,data->fadeLevel,data->attackTime,data->fadeTime);
+	ffbprintf("env %d: %d,%d,%d,%d\r\n", effectId, data->attackLevel, data->fadeLevel, data->attackTime, data->fadeTime);
 }
 
 void FfbEngine::SetConditional (USB_FFBReport_SetCondition_Output_Data_t* data, int effectId)
 {
-#ifdef ffbDebug1
-	printf("%d\r\n",effectId);
-#endif
-	volatile cEffectState* effect=&gEffectStates[effectId];
+	volatile cEffectState* effect = &gEffectStates[effectId];
 
 	effect->magnitude = (s16)data->positiveCoefficient;
 	effect->offset = data->cpOffset;
 	effect->positiveSaturation = data->positiveSaturation;
 	effect->negativeSaturation = data->negativeSaturation;
-
-	//debugPrint(DMid,"SetCondition eid=%d %d %d %d %d",effectId,effect->magnitude, effect->offset, effect->positiveSaturation, effect->negativeSaturation);
 }
 
 void FfbEngine::SetPeriodic (USB_FFBReport_SetPeriodic_Output_Data_t* data, int effectId)
 {
-	volatile cEffectState* effect=&gEffectStates[effectId];
+	volatile cEffectState* effect = &gEffectStates[effectId];
 
 	effect->magnitude = (s16)data->magnitude;
 	effect->offset = data->offset;
 	effect->phase = (s16)data->phase;
 	effect->period = (u16)data->period;
 	effect->freq = 0.0f;
-
-	//debugPrint(DMid,"SetPeriodic eid=%d %d %d %d %d %d",effectId,effect->magnitude, effect->offset, effect->phase, effect->period, effect->freq);
 }
 
 void FfbEngine::SetConstantForce (USB_FFBReport_SetConstantForce_Output_Data_t* data, int effectId)
 {
-	volatile cEffectState* effect=&gEffectStates[effectId];
+	volatile cEffectState* effect = &gEffectStates[effectId];
 
 	effect->magnitude = data->magnitude;
 }
 
 void FfbEngine::SetRampForce (USB_FFBReport_SetRampForce_Output_Data_t* data, int effectId )
 {
-	volatile cEffectState* effect=&gEffectStates[effectId];
+	volatile cEffectState* effect = &gEffectStates[effectId];
 
 	effect->start_mag = data->start;
-	effect->end_mag= data->end;
-
-	//debugPrint(DMid,"SetRampForce eid=%d %d %d",effectId,effect->start_mag, effect->end_mag);
+	effect->end_mag = data->end;
 }
 
 void FfbEngine::SetEffect (USB_FFBReport_SetEffect_Output_Data_t *data, int effectId )
 {
-	volatile cEffectState* effect=&gEffectStates[effectId];
-
+	volatile cEffectState* effect = &gEffectStates[effectId];
 
 	uint8_t eid = data->effectBlockIndex;
 	effect->type = data->effectType;
 	effect->gain = data->gain;
-	ModifyDuration(eid,data->duration); // 0..32767 ms
-
-//	bool is_periodic = false;
-
-	char const *type;
-#ifdef ffbDebug1
-	printf("%d:",effectId);
-#endif
-	// Fill in the effect type specific data
-	switch (data->effectType)
-	{
-		case USB_EFFECT_SQUARE:
-#ifdef ffbDebug1
-			printf("SQ_EFF\r\n");
-#endif
-			type="SQUARE";
-		break;
-		case USB_EFFECT_SINE:
-#ifdef ffbDebug1
-			printf("SIN_EFF\r\n");
-#endif
-			type="SINE";
-		break;
-		case USB_EFFECT_TRIANGLE:
-#ifdef ffbDebug1
-			printf("TRI_EFF\r\n");
-#endif
-			type="TRIANGLE";
-		break;
-
-		case USB_EFFECT_SAWTOOTHDOWN:
-#ifdef ffbDebug1
-			printf("SAW_DN_EFF\r\n");
-#endif
-			type="SAWTOOTH";
-		break;
-
-		case USB_EFFECT_SAWTOOTHUP:
-#ifdef ffbDebug1
-			printf("SAW_UP_EFF\r\n");
-#endif
-			type="SAWTOOTHUP";
-		break;
-//			is_periodic = true;
-		case USB_EFFECT_CONSTANT:
-#ifdef ffbDebug1
-			printf("CONS_EFF\r\n");
-#endif
-			type="CONSTANT";
-		break;
-
-		case USB_EFFECT_RAMP:
-#ifdef ffbDebug1
-			printf("RAMP_EFF\r\n");
-#endif
-			type="RAMP";
-		break;
-
-		case USB_EFFECT_SPRING:
-#ifdef ffbDebug1
-			printf("SPR_EFFt\r\n");
-#endif
-			type="SPRING";
-		break;
-
-		case USB_EFFECT_DAMPER:
-#ifdef ffbDebug1
-			printf("DMP_EFF\r\n");
-#endif
-			type="DAMPER";
-		break;
-		case USB_EFFECT_INERTIA:
-#ifdef ffbDebug1
-			printf("INR_EFF\r\n");
-#endif
-			type="INERTIA";
-		break;
-
-		case USB_EFFECT_FRICTION:
-#ifdef ffbDebug1
-			printf("FRI_EFF\r\n");
-#endif
-			type="FRICTION";
-		break;
-
-		case USB_EFFECT_CUSTOM:
-			effect->period = data->samplePeriod;	// 0..32767 ms
-#ifdef ffbDebug1
-			printf("CUS_EFF\r\n");
-#endif
-			type="CUSTOM";
-
-		break;
-
-		default:
-			type="UNKNOWN EFFECT";
-#ifdef ffbDebug1
-			printf("unknown effect\r\n");
-#endif
-		break;
-	}
-	//debugPrint(DMid,"SetEffect eid=%d %s gain %d duration %d",effectId, type,data->gain,data->duration);
+	ModifyDuration(eid, data->duration); // 0..32767 ms
 }
 
 void FfbEngine::CreateNewEffect(USB_FFBReport_CreateNewEffect_Feature_Data_t* inData, int effectId )
 {
-	volatile cEffectState* effect=&gEffectStates[effectId];
+	volatile cEffectState* effect = &gEffectStates[effectId];
 
 	effect->type = inData->effectType;
 	effect->gain = 0xFF;
@@ -689,8 +470,4 @@ void FfbEngine::CreateNewEffect(USB_FFBReport_CreateNewEffect_Feature_Data_t* in
 	effect->period = 100;
 	effect->duration = USB_DURATION_INFINITE;
 	effect->fadeTime = USB_DURATION_INFINITE;
-
-	//bdebugPrint(DHigh,"CreateNewEffect eid=%d",effectId);
 }
-
-

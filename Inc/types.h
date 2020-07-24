@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2016-2018 Granite Devices Oy
+ * Copyright (c) 2016-2020 Granite Devices Oy
  * ---------------------------------------------------------------------------
  * This file is made available under the terms of Granite Devices Software
  * End-User License Agreement, available at https://granitedevices.com/legal
@@ -19,8 +19,13 @@
 #ifndef TYPES_H
 #define TYPES_H
 
+
+
 #ifdef __cplusplus
+#include <cstdint>
 extern "C" {
+#else
+#include <stdint.h>
 #endif
 
 ///////////////////////////////////////////////////////////////////////////////////////
@@ -34,49 +39,52 @@ enum SystemStatus {	BeforeInit, Driveconnect, DriveInit, DriveInitSuccess,
 					FlashFault, releaseSMBus, SMBusReleased,
 					regainSMBus, ApplyIoniDrcData, IoniDrcError,
 					UIDisconnected, IoniFWUpgradeError, JumpToBootLoader,
-					DriveInitSuccessPause, AutoDetectCommutationSensors,
+					DriveInitSuccessPause, AutoDetectCommutationSensors, testMode,
+					SetBaudrateForOperational,
 					Internal_ForceMyEnumIntSize = 2147483647L };
 
+enum soundEffect {	None, InitComplete, IndexFound, Connected, Disconnected,
+					HiTorqModeActivated, HiTorqModeDeactivated, LowBattery};
 
 #ifndef u32
-typedef unsigned long u32;
+typedef uint32_t u32;
 #endif
 #ifndef u16
-typedef unsigned short u16;
+typedef uint16_t u16;
 #endif
 #ifndef u8
-typedef unsigned char u8;
+typedef uint8_t u8;
 #endif
 
 #ifndef s32
-typedef signed long s32;
+typedef int32_t s32;
 #endif
 #ifndef s16
-typedef signed short s16;
+typedef int16_t s16;
 #endif
 #ifndef s8
-typedef signed char s8;
+typedef int8_t s8;
 #endif
 #ifndef b8
-typedef u8 b8;
+typedef uint8_t b8;
 #endif
 #ifndef b16
-typedef u16 b16;
+typedef uint16_t b16;
 #endif
 #ifndef b32
-typedef u32 b32;
+typedef uint32_t b32;
 #endif
 #ifndef f32
-typedef float				f32;
+typedef float f32;
 #endif
 #ifndef f64
-typedef double				f64;
+typedef double f64;
 #endif
 #ifndef s64
-typedef signed long long	s64;
+typedef int64_t s64;
 #endif
 #ifndef u64
-typedef unsigned long long	u64;
+typedef int64_t u64;
 #endif
 #ifndef FALSE
 #define FALSE	false
@@ -88,6 +96,7 @@ typedef unsigned long long	u64;
 #ifndef NULL
 #define NULL 0
 #endif
+
 #ifndef WIN32
 	/*Defines for Bset etc directives....*/
 #define Bset(data,val) data|=(val)
@@ -138,8 +147,6 @@ typedef unsigned long long	u64;
 #define S8(v) ((s8)(v))
 #define S16(v) ((s16)(v))
 #define S32(v) ((s32)(v))
-
-
 #endif
 
 #ifdef __cplusplus

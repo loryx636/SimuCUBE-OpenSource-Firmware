@@ -1,22 +1,5 @@
-/*
- * Copyright (c) 2016-2018 Granite Devices Oy
- * ---------------------------------------------------------------------------
- * This file is made available under the terms of Granite Devices Software
- * End-User License Agreement, available at https://granitedevices.com/legal
- *
- * Contributions and modifications are allowed only under the terms of Granite
- * Devices Contributor License Agreement, available at
- * https://granitedevices.com/legal
- * ---------------------------------------------------------------------------
- * 3rd-party contributors:
- *
- *
- *
- * ---------------------------------------------------------------------------
-*/
 
 //HW interface to phyiscal bus device
-
 #ifndef SM_BUSDEVICE
 #define SM_BUSDEVICE
 
@@ -30,6 +13,8 @@ typedef smint16 smbusdevicehandle;
 //ie "COM1" "VSD2USB"
 //return 0-1 if fails, otherwise handle number
 smbusdevicehandle smBDOpen( const char *devicename );
+
+smbusdevicehandle smBDOpenWithCallbacks(const char *devicename, BusdeviceOpen busOpenCallback, BusdeviceClose busCloseCallback, BusdeviceReadBuffer busReadCallback, BusdeviceWriteBuffer busWriteCallback , BusdeviceMiscOperation busMiscOperationCallback);
 
 //return true if ok
 smbool smBDClose( const smbusdevicehandle handle );
@@ -46,6 +31,17 @@ smbool smBDTransmit(const smbusdevicehandle handle);
 //returns true if byte read sucessfully
 smbool smBDRead( const smbusdevicehandle handle , smuint8 *byte );
 
+//see info at definition of BusDeviceMiscOperationType
+//returns true if sucessfully
+smbool smBDMiscOperation( const smbusdevicehandle handle, BusDeviceMiscOperationType operation );
+
+//BUS DEVICE INFO FETCH FUNCTIONS:
+
+// Return number of bus devices found. details of each device may be consequently fetched by smBDGetBusDeviceDetails()
+smint smBDGetNumberOfDetectedBuses();
+
+//return smtrue if success
+smbool smBDGetBusDeviceDetails( smint index, SM_BUS_DEVICE_INFO *info );
 
 
 #endif

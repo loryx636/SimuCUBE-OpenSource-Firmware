@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2016-2018 Granite Devices Oy
+ * Copyright (c) 2016-2020 Granite Devices Oy
  * ---------------------------------------------------------------------------
  * This file is made available under the terms of Granite Devices Software
  * End-User License Agreement, available at https://granitedevices.com/legal
@@ -50,11 +50,11 @@ extern unsigned char rxBuffer[RXBUFSIZE];
 extern int rxBufPos;
 
 
-
+enum fwUpdateStatus {FWUpdateFailed, FwNotUpdated, FWUpdated};
 
 void broadcastSystemStatus(SystemStatus status);
 
-#define smbustimeout 100
+#define smbustimeout 50 // 1 count=10ms
 
 
 // enable/disable SM watchdog
@@ -68,22 +68,41 @@ bool WaitForIndexPulse( int &indexPos );
 // wait for watchdog to time out
 void startWatchDogWaitingDelay();
 
-//init SM bus baudrate. can call again after loss of communication to re-init. return -1 if fail, 0 if success
-int initSMBusBaudrate();
+/** $brief init SM bus baudrate. can call again after loss of communication to re-init.
+ *
+ * @param HighBPSMode =true sets high baudrate mode false sets default baudrate
+ * @return -1 if fail, 0 if success.
+ */
 
-//init SM bus baudrate. can call again after loss of communication to re-init. return -1 if fail, 0 if success
-int initDefaultSMBusBaudrate(bool notest=false);
+int initSMBusBaudrate(bool HighBPSMode);
 
+// disables drive
+void disableSMDrive();
 
 //Drive initialization
+// mega function
 bool InitializeDrive(bool OnlyConnectAndUploadFWIfRequired = false);
+
+// split to functional parts
+void preDriveInit();
+fwUpdateStatus tryDfuUploadDriveFw(bool OnlyConnectAndUploadFWIfRequired);
+bool updateDriveFw(bool OnlyConnectAndUploadFWIfRequired, smint fwversion);
+smint32 readDriveFWVersion();
+bool clearDriveErrors();
+void readInitialDriveParams(smint32 &driveStatus);
+void switchLedsOff();
+bool checkConnectionErrors();
+void setBeepsAndOtherDriveParameters();
+bool waitDriveFaultsClear(smint32 &driveStatus);
+void readInitialPos(smint32 &driveStatus);
+bool waitForServoReady(smint32 &driveStatus);
 
 //Transmit complete callbacks for UART
 void HAL_UART_ErrorCallback(UART_HandleTypeDef *huart);
 void HAL_UART_TxCpltCallback(UART_HandleTypeDef *huart);
 
-// update IONI firmware
-uint8_t updateIoniFirmware();
+// update Drive firmware
+uint8_t updateDriveFirmware();
 
 // reset UART3 parameters, e.g. when resetting baudrates
 void resetUSART3vars();
@@ -100,29 +119,38 @@ void setCurrentProfileMMC();
 // save drive configuration to drive flash
 void saveDriveCfg();
 
+// restarts drive
+void restartSMDrive();
+
+//will set correct fast uddate cycle mode for SetTorque
+void initFastUpdateCycleMode();
+
 // empties commutation configuration variables in the drive
 void clearCommutationConfig();
 
 // polls auto-commutation setup process state. Returns state from drive.
 smint32 updateAutoCommutationSetup();
 
-// Initializes torque command, a "pre-init" of sorts. Currently not used.
-void InitializeTorqueCommand ();
+struct TorqueResponse {
+	// microseconds since last SetTorque command
+	uint16_t microseconds_since_last;
+	// timestamp when the encoder was last sampled, difference between two is 400 us
+	uint8_t encoder_sampled_at;
+	// 24-bit of the latest encoder position
+	int32_t position;
+};
 
-//called after drive is fully initialized to set 32 bit position from drive. needed because 16 bit incremental pos counter can roll over and it is absolute only after this is called
-//Update: this is not required anymore.
-void resetPositionCountAt(s32 newpos);
+// Writes torque to drive, returns encoder counter value from drive. Also parses the drive status and reads error codes.
+// parameters full scale = signed 14 bit
+// normalized_torque_for_filtering will go through reconstruction filter etc
+// normalized_torque_direct will bypass drive filters
+TorqueResponse SetTorque(int32_t normalized_torque_for_filtering, int32_t normalized_torque_direct);
 
-//Writes torque to drive, returns encoder counter value from drive. Also parses the drive status and reads error codes.
-s32 SetTorque (s32 normalized_torque);
+// plays sound if hw supports it
+void SMPlaySound(int soundNumber);
 
-
-// reads all filter parameters from the drive
-void readIoniParameters();
-
-// writes all filter parameters to the drive
-void writeChangedIoniParameters(bool forced);
-
+// applies config data from buffer
+bool SMApplyDRCDataFromBuffer(uint8_t* buffer, uint16_t length);
 
 
 #endif

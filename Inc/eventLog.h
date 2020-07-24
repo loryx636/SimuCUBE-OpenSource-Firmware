@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2016-2018 Granite Devices Oy
+ * Copyright (c) 2016-2020 Granite Devices Oy
  * ---------------------------------------------------------------------------
  * This file is made available under the terms of Granite Devices Software
  * End-User License Agreement, available at https://granitedevices.com/legal
@@ -15,13 +15,6 @@
  * ---------------------------------------------------------------------------
 */
 
-/*
- * eventLog.h
- *
- *  Created on: Oct 31, 2017
- *      Author: Mika
- */
-
 #ifndef EVENTLOG_H_
 #define EVENTLOG_H_
 
@@ -35,6 +28,8 @@ public:
 	void addEventParam(uint16_t event, int32_t parameter=0, bool forceAddEvent=false);
 	void addEvent(uint16_t event, bool forceAddEvent=false);
 	void getEvent(uint16_t eventIndex, uint16_t &event, int32_t &parameter);
+	void resetLogStartTime();
+	void addTimeStamp();
 	void setEnabled();
 	void setDisabled();
 	void setVerbosity(uint8_t newverbosity);
@@ -48,6 +43,7 @@ private:
 
 	bool enabled;
 	bool testVerbosity(uint16_t event);
+	uint64_t startTime;
 };
 
 #endif /* EVENTLOG_H_ */

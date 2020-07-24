@@ -1,8 +1,24 @@
+/*
+ * Copyright (c) 2016-2020 Granite Devices Oy
+ * ---------------------------------------------------------------------------
+ * This file is made available under the terms of Granite Devices Software
+ * End-User License Agreement, available at https://granitedevices.com/legal
+ *
+ * Contributions and modifications are allowed only under the terms of Granite
+ * Devices Contributor License Agreement, available at
+ * https://granitedevices.com/legal
+ * ---------------------------------------------------------------------------
+ * 3rd-party contributors:
+ * Etienne Saint-Paul
+ *
+ *
+ * ---------------------------------------------------------------------------
+*/
 
 #ifndef Biquad1storder_h
 #define Biquad1storder_h
 
-#include <Math.h>
+#include <math.h>
 
 class Biquad1StOrder {
 public:

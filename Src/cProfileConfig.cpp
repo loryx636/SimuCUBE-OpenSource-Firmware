@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2016-2018 Granite Devices Oy
+ * Copyright (c) 2016-2020 Granite Devices Oy
  * ---------------------------------------------------------------------------
  * This file is made available under the terms of Granite Devices Software
  * End-User License Agreement, available at https://granitedevices.com/legal
@@ -15,14 +15,9 @@
  * ---------------------------------------------------------------------------
 */
 
-/*
- * cProfileConfig.cpp
- *
- *  Created on: Feb 1, 2017
- *      Author: Mika
- */
 
 #include "cProfileConfig.h"
+#include "config_comm_defines.h"
 
 cProfileConfig::cProfileConfig() {
 	// Auto-generated constructor stub
@@ -36,7 +31,32 @@ cProfileConfig::~cProfileConfig() {
 void cProfileConfig::SetDefault() {
 	// reset everything to zero here.
 	// pointers to objects have to be deleted.
-
+	for (size_t i = 0; i < sizeof(settings) / sizeof(settings[0]); ++i) {
+		settings[i]=0;
+	}
+	settings[addrMaxAngle]=900;
+	settings[addrSineGain]=100;
+	settings[addrSquareGain]=100;
+	settings[addrMainGain]=60;
+	settings[addrSpringGain]=100;
+	settings[addrFrictionGain]=15;
+	settings[addrDamperGain]=15;
+	settings[addrInertiaGain]=0;
+	settings[addrEndstopOffset]=0;
+	settings[addrIoniLPF]=0;
+	settings[addrIoniNotch]=0;
+	settings[addrIoniDamping]=0;
+	settings[addrIoniFriction]=0;
+	settings[addrIoniInertia]=0;
+	settings[addrIoniFilter1]=1;
+	settings[addrFilteringModes]=0;
+	settings[addrSawtoothGain]=100;
+	settings[addrTriangleGain]=100;
+	for(int i = 0; i<32; i++) {
+		profilename[i]=0;
+		bytestore[i]=0;
+	}
+#if 0 // default settings for 0.10 and earlier firmware with old data formats
 	// remember: percentages.
 	mMaxAngle = 900;
 	mSineGain = 100;
@@ -54,9 +74,10 @@ void cProfileConfig::SetDefault() {
 	ioni_inertia = 0;
 	ioni_filter1 = 0;
 	filteringModes = 0;
-	for(int i = 0; i<20; i++) {
+	for(int i = 0; i<32; i++) {
 		profilename[i]=0;
 	}
 	mSawtoothGain = 100;
 	mTriangleGain = 100;
+#endif
 }

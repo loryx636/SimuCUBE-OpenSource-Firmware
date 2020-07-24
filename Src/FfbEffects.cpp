@@ -277,7 +277,7 @@ float calcDampingEffect(uint8_t gain, float speed, volatile cEffectState *effect
 	return lpf.process(force);
 }
 
-#define MAX_DESKTOP_SPRING_FORCE_AT_ANGLE 600.0f
+#define MAX_DESKTOP_SPRING_FORCE_AT_ANGLE 180.0f
 float desktopSpringEffect(uint8_t gain) {
 	/* use a defined MAX_DESKTOP_SPRING_FORCE_AT_ANGLE angle where the desktop centering spring will give maximum torque, so that the effect
 	 * is consistant and does not depend on user's steering angle setting.
@@ -285,11 +285,11 @@ float desktopSpringEffect(uint8_t gain) {
 	 * wheel in to center even if the force produced here is not enough in itself to do so.
 	 */
 	float err=fmax(-MAX_DESKTOP_SPRING_FORCE_AT_ANGLE, fmin(MAX_DESKTOP_SPRING_FORCE_AT_ANGLE, joystick.gFFBDevice.angle.getUnlimitedSteeringAngle()));
-	float spring = err*10000.0f/MAX_DESKTOP_SPRING_FORCE_AT_ANGLE*255.0f;  // this scales effect to have full max force at 600 degrees
+	float spring = err*10000.0f/MAX_DESKTOP_SPRING_FORCE_AT_ANGLE*255.0f;  // this scales effect to have full max force at MAX_DESKTOP_SPRING_FORCE_AT_ANGLE degrees
 	spring = spring*(float)gain/100.0f;
-	float torquecommand=spring;
-	spring = joystick.gFFBDevice.desktopDampingLPF.process(spring);
-	return spring;
+	float springfiltered = joystick.gFFBDevice.desktopDampingLPF.process(spring);
+	//printf("d gain %d err %f spring %f filtered %f\r\n", gain, err, spring, springfiltered);
+	return springfiltered;
 }
 
 float irFFBEffects() {

@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2016-2018 Granite Devices Oy
+ * Copyright (c) 2016-2020 Granite Devices Oy
  * ---------------------------------------------------------------------------
  * This file is made available under the terms of Granite Devices Software
  * End-User License Agreement, available at https://granitedevices.com/legal
@@ -15,25 +15,17 @@
  * ---------------------------------------------------------------------------
 */
 
-/*
- * cFFBDevice.cpp
- *
- *  Created on: Jan 30, 2017
- *      Author: Mika
- */
-
-#include <eventlog.h>
-#include <ffbengine.h>
+#include <eventLog.h>
+#include <FfbEngine.h>
 #include <FfbEffects.h>
 #include "cFFBDevice.h"
-//#include "command.h"
 #include "stm32f4xx.h"
 #include "stm32f4xx_hal_flash.h"
 #include "stm32f4xx_hal_flash_ex.h"
 #include "config_comm_defines.h"
 
 #include "usbd_customhid.h"
-#include "usbgamecontroller.h"
+#include "USBGameController.h"
 #include "types.h"
 #include "FfbEffects.h"
 
@@ -43,9 +35,12 @@
 
 #include "Biquad1storder.h"
 #include "simplemotioncomms.h"
+#include "simplemotion_private.h"
 
-//#define ffbDebug3
-//#define ffbDebug4
+#include "hw_functions.h"
+
+#include "stm32f407xx.h"
+
 extern volatile SystemStatus currentSystemStatus;
 extern volatile SystemStatus nextSystemStatus;
 extern volatile SystemStatus previousSystemStatus;
@@ -57,7 +52,6 @@ extern uint8_t lowestCompatibleFlashSettingsMajorVersion;
 extern uint8_t lowestCompatibleFlashSettingsMinorVersion;
 extern uint32_t driveStatusBits;
 
-//extern uint8_t firmwareVersion[3];
 extern bool debugMode;
 extern bool debugMode2;
 extern void start_timer2_15ms_delay();
@@ -70,13 +64,14 @@ extern uint64_t millis;
 extern TIM_HandleTypeDef htim6_1MhzEffectClock;
 static FLASH_EraseInitTypeDef EraseInitStruct;
 
-#define clipping_led_threshold 16300
-
-cFFBDevice::cFFBDevice() {
+cFFBDevice::cFFBDevice() : latestIRFFBForce{0} {
 	// Auto-generated constructor stub
 	SetDefault();
+	_smReleased = false;
 	rawAnalogMode = false;
-	forcesEnabled = true; // only disabled for motorconfigwizard
+	forcesEnabled = 1; // only disabled for motorconfigwizard or if returning from IONI config with instant torque
+	forcesDisabledForSafety = 0; // only 1 if over/too near endstop when coming back from IONI config mode
+
 	temporaryCenterPoint = false;
 
 	temporarySteeringAngleIsSet = false;
@@ -85,44 +80,53 @@ cFFBDevice::cFFBDevice() {
 	IoniDrcDataReceivedBytes=0;
 	firmwareuploadingstatuspercentage = 0;
 	firmwareuploadinprogress = false;
-	memset(movingAvgFilterHistory, 0, sizeof(movingAvgFilterHistory));
-	movingAvgFilterLatest =0;
+
 	unsavedSettings = 0;
-	indexpointfound = 0;
+	_indexpointFound = 0;
 	motorFaultRegister = 0;
-	latestIRFFBForce[0] = 0;
-	latestIRFFBForce[1] = 0;
-	latestIRFFBForce[2] = 0;
-	latestIRFFBForce[3] = 0;
-	latestIRFFBForce[4] = 0;
-	latestIRFFBForce[5] = 0;
+
 	IRFFBModeEnabled = false;
 	IoniFWVersion = 0;
 	scHWVersion = hwunknown;
-	degrees_from_endstop = 500000.0;
-	endstopDirection = false;
-	wheelSpeed = 0.0;
-	previousEncoderPos = 0;
-	endstopdampergain = 0.0;
-	endstopMaxTorque = 0.0;
-	FFB2500HzWait = false;
-	debugvalue1 = 0;
+
+	FFBLoopWait = false;
+	debugvalue1_ = 0;
 	currentprofileindex = 0;
+	currentanalogconfigindex = 0;
 	defaultprofileindex = 0;
 	numberofprofiles = 1;
 	rewriteDefault = false;
 
 	ffbDevGain = 255;
 	ffbEffectUsage = 0;
-	driveInitSuccess=false;
+	driveInitSuccessFlag=0;
 	clippingLedOn=false;
 
 	indexPointEncPos=0;
 	counter=0;
-	steeringAngleUnlimited=0.0;
-	absoluteFullRotOffset=0;
 	faultLocationID=0;
+	testModeActive=0;
 	driveStatusBits=0;
+	pin7shift=0;
+
+	bledetected=0;
+
+	ServoDriveDisabled=false;
+	servoStandby = 0;
+	_swwIdleDisonnect = 0;
+	torqueFailCount = 0;
+	factory_encoder_offset = 0;
+	ledCyclePointer = 0;
+	STOStatus=0; // STO disabled
+	wirelessTorqueOffEvent = 0;
+	wirelessTorqueOffButton = 0;
+	torqueOffSavingDelay = 0;
+	torqueOffSavingDelayStart = 0;
+	sendDisableHighTorque = 0;
+
+	lastWirelessConnectionState = false;
+	lastWirelessVoltage = 0;
+
 }
 
 cFFBDevice::~cFFBDevice() {
@@ -133,8 +137,13 @@ void cFFBDevice::SetFFB(FfbEngine* handle) {
 	ffbhandle = handle;
 }
 
+void cFFBDevice::setSmReleased(bool newstate) {
+	_smReleased = newstate;
+}
+
 void cFFBDevice::SetDefault()	{
 	mConfig.SetDefault();
+	lastTelemetryReceived=millis&0xFFFF;
 
 	currentprofileindex = 0;
 	defaultprofileindex = 0;
@@ -142,74 +151,16 @@ void cFFBDevice::SetDefault()	{
 	rewriteDefault = false;
 	waitLastSimpleMotion = false;
 
-	int i = 0;
 	lastButtonUpdateMillis = 0;
-	button_port[i]	= X12_UPPER_1_GPIO_Port; button_pin[i]	= X12_UPPER_1_Pin;
-	button_lastUpdate[i] = 0; button_currentState[i] = GPIO_PIN_RESET; button_debouncedState[i] = GPIO_PIN_RESET;
-	i++;
+	forceFirsttimeDriveInit=0;
 
-	button_port[i]	= X12_UPPER_2_GPIO_Port; button_pin[i]	= X12_UPPER_2_Pin;
-	button_lastUpdate[i] = 0; button_currentState[i] = GPIO_PIN_RESET; button_debouncedState[i] = GPIO_PIN_RESET;
-	i++;
+	initButtonInputs();
 
-	button_port[i]	= X12_UPPER_3_GPIO_Port; button_pin[i]	= X12_UPPER_3_Pin;
-	button_lastUpdate[i] = 0; button_currentState[i] = GPIO_PIN_RESET; button_debouncedState[i] = GPIO_PIN_RESET;
-	i++;
-
-	button_port[i]	= X12_UPPER_4_GPIO_Port; button_pin[i]	= X12_UPPER_4_Pin;
-	button_lastUpdate[i] = 0;button_currentState[i] = GPIO_PIN_RESET;button_debouncedState[i] = GPIO_PIN_RESET;
-	i++;
-
-	button_port[i]	= X12_UPPER_5_GPIO_Port;button_pin[i]	= X12_UPPER_5_Pin;
-	button_lastUpdate[i] = 0;button_currentState[i] = GPIO_PIN_RESET;button_debouncedState[i] = GPIO_PIN_RESET;
-	i++;
-
-	button_port[i]	= X12_UPPER_6_GPIO_Port;button_pin[i]	= X12_UPPER_6_Pin;
-	button_lastUpdate[i] = 0;button_currentState[i] = GPIO_PIN_RESET;button_debouncedState[i] = GPIO_PIN_RESET;
-	i++;
-
-	button_port[i]	= X12_UPPER_7_GPIO_Port;button_pin[i]	= X12_UPPER_7_Pin;
-	button_lastUpdate[i] = 0;button_currentState[i] = GPIO_PIN_RESET;button_debouncedState[i] = GPIO_PIN_RESET;
-	i++;
-
-	button_port[i]	= X12_LOWER_1_GPIO_Port;button_pin[i]	= X12_LOWER_1_Pin;
-	button_lastUpdate[i] = 0;button_currentState[i] = GPIO_PIN_RESET;button_debouncedState[i] = GPIO_PIN_RESET;
-	i++;
-
-	button_port[i]	= X12_LOWER_2_GPIO_Port;button_pin[i]	= X12_LOWER_2_Pin;
-	button_lastUpdate[i] = 0;button_currentState[i] = GPIO_PIN_RESET;button_debouncedState[i] = GPIO_PIN_RESET;
-	i++;
-
-	button_port[i]	= X12_LOWER_3_GPIO_Port;button_pin[i]	= X12_LOWER_3_Pin;
-	button_lastUpdate[i] = 0;button_currentState[i] = GPIO_PIN_RESET;button_debouncedState[i] = GPIO_PIN_RESET;
-	i++;
-
-	button_port[i]	= X12_LOWER_4_GPIO_Port;button_pin[i]	= X12_LOWER_4_Pin;
-	button_lastUpdate[i] = 0;button_currentState[i] = GPIO_PIN_RESET;button_debouncedState[i] = GPIO_PIN_RESET;
-	i++;
-
-	button_port[i]	= X12_LOWER_5_GPIO_Port;button_pin[i]	= X12_LOWER_5_Pin;
-	button_lastUpdate[i] = 0;button_currentState[i] = GPIO_PIN_RESET;button_debouncedState[i] = GPIO_PIN_RESET;
-	i++;
-
-	button_port[i]	= X12_LOWER_6_GPIO_Port;button_pin[i]	= X12_LOWER_6_Pin;
-	button_lastUpdate[i] = 0;button_currentState[i] = GPIO_PIN_RESET;button_debouncedState[i] = GPIO_PIN_RESET;
-	i++;
-
-	button_port[i]	= X12_LOWER_7_GPIO_Port;button_pin[i]	= X12_LOWER_7_Pin;
-	button_lastUpdate[i] = 0;button_currentState[i] = GPIO_PIN_RESET;button_debouncedState[i] = GPIO_PIN_RESET;
-
+	BLEConn.setUart(&huart1);
+	angle.setDevice(this);
+	_swwautodisconnecthandler.init(&angle, &BLEConn, this);
 	/* ffb device state variables */
 	resetFFBDeviceState();
-}
-
-float cFFBDevice::limit(float input, float min, float max) {
-	if (input<min) {
-		return min;
-	} else if(input>max) {
-		return max;
-	}
-	return input;
 }
 
 void cFFBDevice::resetFFBDeviceState() {
@@ -225,39 +176,17 @@ void cFFBDevice::resetFFBDeviceState() {
 	}
 }
 
-bool cFFBDevice::readEncoder32bit() {
-	s32 encoder32 = 0;
-	SM_STATUS test = smRead1Parameter(joystick.gFFBDevice.mSMBusHandle, 1, SMP_ACTUAL_POSITION_FB_NEVER_RESETTING , &encoder32);
-	if(test != SM_OK) {
-		return false;
+void cFFBDevice::setDebugValue1(uint32_t value) {
+	if(debugvalue1_ == 0) {
+		debugvalue1_ = value;
 	}
-
-	if(mConfig.hardwareConfig.mIndexingMode == startAtCenterPhasedIndexing) {
-		if(!temporaryCenterPoint) {
-			resetPositionCountAt(encoder32);//+mConfig.hardwareConfig.mEncoderOffset);
-		} else {
-			resetPositionCountAt(encoder32);//+mEncoderTemporaryOffset);
-		}
-	}
-	else if(mConfig.hardwareConfig.mIndexingMode==indexPointIndexing) {
-		if(!temporaryCenterPoint) {
-			resetPositionCountAt(encoder32);//+mConfig.hardwareConfig.mEncoderOffset);
-		} else {
-			resetPositionCountAt(encoder32);//+mEncoderTemporaryOffset);
-		}
-	} else {
-		if(!temporaryCenterPoint) {
-			resetPositionCountAt(encoder32);//+mConfig.hardwareConfig.mEncoderOffset);
-		} else {
-			resetPositionCountAt(encoder32);//+mEncoderTemporaryOffset);
-		}
-	}
-
-	return true;
 }
 
+uint32_t cFFBDevice::getDebugValue1() {
+	return debugvalue1_;
+}
 
-void cFFBDevice::updateEffectCounters(s32 newdata, uint32_t bit) {
+void cFFBDevice::updateEffectCounters(int32_t newdata, uint32_t bit) {
 	if(LastEffectValue[bit] != newdata) {
 		LastEffectValue[bit] = newdata;
 		// new data was received, so effect is active
@@ -282,383 +211,382 @@ void cFFBDevice::updateEffectRegister() {
 	}
 }
 
+uint32_t torque_last_sent = 0;
+uint32_t between_torque_sends = 0;
 
-
-
-extern s32 encoderPos32;
-
-bool cFFBDevice::CalcTorqueCommand(s32 *readEncoderPos) {
-	// return if waiting
-	if(FFB2500HzWait) {
-		return false;
-	}
-	FFB2500HzWait = true;
-
-#if 1
-   	diffMs = (float)diffUs/1000.0;
-   	axisSpeedPerMs= (lastAxisPosFloat-axisPosFloat)/diffMs;
-   	lastAxisPosFloat=axisPosFloat;
-   	axisSpeedPerMs = axisSpeedMsLPF.process(axisSpeedPerMs);
-#endif
-
-	// variables needes for effect calculation
-    float countsPerRevInverse=1.0/(float)mConfig.hardwareConfig.mEncoderCPR;
-
-	float torquecommand = 0.0;
-	float dampingcommand = 0.0;
-	float frictioncommand = 0.0;
-	float endstopcommand = 0.0;
-	float totalcommand = 0.0;
-	uint8_t numEffects=0;
-	float frictionTorq = 0.0;
-	float dampingEffectGain = 0.0;
-
-	// Speed required for damping and endstop effect
-	// need to calculate back to degrees to be generally effective
-	wheelSpeed = (float)(((previousEncoderPos-*readEncoderPos)/(float)mConfig.hardwareConfig.mEncoderCPR)*360.0);
-	int wheelSpeedCount = previousEncoderPos -*readEncoderPos;
-	static float prevVel=0;
-    float acc=wheelSpeedCount-prevVel;
-    prevVel=wheelSpeedCount;
-
-
-
-	//printf("s %.2f\r\n", wheelSpeed);
-	previousEncoderPos = *readEncoderPos;
-	uint32_t cpr = mConfig.hardwareConfig.mEncoderCPR;
-
-
-	/* END STOP EFFECT CALCULATION */
-
-	endstopcommand = endstopEffect(wheelSpeed);
-
-
-	ffbEffectUsage = 0;
-
-
-	if(!IRFFBModeEnabled) {
-		/* CALCULATE TORQUE BASED ON EFFECTS */
-
-
-		for (u8 id = FIRST_EID; id <= MAX_EFFECTS; id++)
-		{
-			volatile cEffectState* ef = ffbhandle->getEffectState(id);
-			if(ef->state == MEffectState_Playing || ef->state == MEffectState_Allocated)
-			{
-				numEffects++;
-				// constant force gain is usually always 255.
-				//s32 mag = (((s32)ef->magnitude)*((s32)ef->gain)) >> 6;
-				switch (ef->type)
-				{
-				case USB_EFFECT_CONSTANT:
-					ffbEffectUsage |= (1<<ConstantEffectBit); updateEffectCounters((s32)ef->magnitude, ConstantEffectBit);
-					torquecommand+=constantForceEffect(ef);
-					break;
-				case USB_EFFECT_RAMP:
-					// not implemented yet
-					ffbEffectUsage |= (1<<RampEffectBit);
-					updateEffectCounters((s32)ef->magnitude, RampEffectBit);
-					if(ef->state != MEffectState_Playing) break;
-					break;
-				case USB_EFFECT_SQUARE:
-					ffbEffectUsage |= (1<<SquareEffectBit);	updateEffectCounters((s32)ef->magnitude, SquareEffectBit);
-					torquecommand+=squareEffect(ef, mConfig.profileConfigs[currentprofileindex].mSquareGain);
-					break;
-				case USB_EFFECT_SINE:
-					if(ef->magnitude==0) {
-						ffbEffectUsage |= (1<<PeriodSineConstantEffectBit); updateEffectCounters((s32)ef->offset, PeriodSineConstantEffectBit);
-					} else {
-						ffbEffectUsage |= (1<<PeriodSineChangingEffectBit); updateEffectCounters((s32)ef->magnitude, PeriodSineChangingEffectBit);
-					}
-					torquecommand+=sineEffect(ef, mConfig.profileConfigs[currentprofileindex].mSineGain);
-					break;
-				case USB_EFFECT_TRIANGLE:
-					ffbEffectUsage |= (1<<TriangleEffectBit); updateEffectCounters((s32)ef->magnitude, TriangleEffectBit);
-					torquecommand+=triangleEffect(ef, mConfig.profileConfigs[currentprofileindex].mTriangleGain);
-					break;
-				case USB_EFFECT_SAWTOOTHDOWN:
-					ffbEffectUsage |= (1<<SawtoothDownEffectBit); updateEffectCounters((s32)ef->magnitude, SawtoothDownEffectBit);
-					torquecommand+=sawtoothDownEffect(ef, mConfig.profileConfigs[currentprofileindex].mSawtoothGain);
-					break;
-				case USB_EFFECT_SAWTOOTHUP:
-					ffbEffectUsage |= (1<<SawtoothUpEffectBit); updateEffectCounters((s32)ef->magnitude, SawtoothUpEffectBit);
-					torquecommand+=sawtoothUpEffect(ef, mConfig.profileConfigs[currentprofileindex].mSawtoothGain);
-					break;
-				case USB_EFFECT_SPRING:
-					ffbEffectUsage |= (1<<SpringEffectBit); updateEffectCounters((s32)ef->offset, SpringEffectBit);
-					torquecommand+=springEffect(ef, mConfig.profileConfigs[currentprofileindex].mSineGain);
-					break;
-				case USB_EFFECT_FRICTION:
-					ffbEffectUsage |= (1<<FrictionEffectBit); updateEffectCounters((s32)ef->magnitude, FrictionEffectBit);
-					frictionTorq=frictionEffect(readEncoderPos, countsPerRevInverse, cpr, ef, mConfig.profileConfigs[currentprofileindex].mFrictionGain);
-					break;
-				case USB_EFFECT_DAMPER:
-					ffbEffectUsage |= (1<<DampingEffectBit); updateEffectCounters((s32)ef->magnitude, DampingEffectBit);
-					dampingEffectGain =calcDamperEffectGain(ef, mConfig.profileConfigs[currentprofileindex].mDamperGain);
-					dampingcommand=calcDampingEffect(dampingEffectGain,ef);
-					break;
-				case USB_EFFECT_INERTIA:
-					// not implemented yet
-					ffbEffectUsage |= (1<<InertiaEffectBit); updateEffectCounters((s32)ef->magnitude, InertiaEffectBit);
-					if(ef->state != MEffectState_Playing) break;
-					break;
-				case USB_EFFECT_CUSTOM:
-					// not implemented yet.
-					ffbEffectUsage |= (1<<CustomEffectBit); updateEffectCounters((s32)ef->magnitude, CustomEffectBit);
-					if(ef->state != MEffectState_Playing) break;
-					break;
-				default:
-					break;
-				}
-			}
+bool wait(volatile bool &until) {
+	uint32_t start = millis;
+ 	while (until) {
+		if(millis - start > 3) {
+			return false; // timer stuck?
 		}
-
-		/* FFB FILTERING STUFF */
-
-		if (mConfig.profileConfigs[currentprofileindex].filteringModes & (1 << testFilter)) {
-			// other filter development can be done here, for example. Define bits like testFilter, and assign new variables in profiles if required.
-		}
-
-
-
-
-		/* DESKTOP SPRING EFFECT */
-
-		if (mConfig.hardwareConfig.mDesktopAutoCenter == 1 && numEffects == 0)
-		{
-			torquecommand+=desktopSpringEffect(mConfig.hardwareConfig.mDesktopSpringSaturation, mConfig.hardwareConfig.mDesktopSpringGain);
-		}
-
-
-		/* PROCESS INERTIA, FRICTION AND DAMPING EFFECTS */
-		int inertiaEffectGain = 0;
-
-		float torqsetpointAdder = -(dampingLPF.process( inertiaLPF.process(acc*float(inertiaEffectGain)*1500.0))*countsPerRevInverse + frictionTorq);
-		torqsetpointAdder= torqsetpointAdder * 256.0 * 256.0;
-		torquecommand-=dampingcommand;//+torqsetpointAdder
-		torquecommand-=torqsetpointAdder;
-} // END NORMAL MODE
-	else {
-		//IRFFB MODE
-		torquecommand+=irFFBEffects();
 	}
 
-
-	/* Determine if torque should overcome the endstop force or not */
-	if(mConfig.hardwareConfig.mStopsEnabled) {
-		if(degrees_from_endstop < 0.0005) {
-			totalcommand = endstopcommand;
-		} else {
-			totalcommand = endstopcommand+torquecommand;
-		}
-	} else {
-		totalcommand = torquecommand;
-	}
-
-	/* EFFECT SCALING FOR SIMPLEMOTION */
-	// this command needs to be scaled to suitable range for Simplemotion:
-	totalcommand = (float)ffbDevGain*totalcommand/255.0f;
-	int smcommand = scaleEffectForSimplemotion(totalcommand);
-
-
-#ifdef ffbDebug4
-	//printf(",%d\r\n", smcommand);
-#endif
-
-	if(!forcesEnabled) {
-		*readEncoderPos = SetTorque(0);
-	} else {
-		*readEncoderPos=SetTorque(smcommand);
-	}
-	//printf("%d\r\n", pos);
-	//	*readEncoderPos=pos;
-	if(mConfig.hardwareConfig.invertSteeringValue) axisPos = 65535-axisPos;
 	return true;
 }
 
-s32 cFFBDevice::ConstrainEffect(s32 val)
-{
-	return (constrain(val, -MAX_NORM_TORQUE, MAX_NORM_TORQUE));
-	return val;
+bool cFFBDevice::CalcTorqueCommand() {
+
+	bool restore_pc_sampling = (DWT->CTRL & DWT_CTRL_PCSAMPLENA_Msk) != 0;
+
+	if (restore_pc_sampling) {
+		// turn off program counter sampling to remove the biggest offender
+		// (this and/or the wait method) from the results.
+		// did not appear to give better resolution for the sampling in general.
+		DWT->CTRL &= !DWT_CTRL_PCSAMPLENA_Msk;
+	}
+
+	// await until the timer interrupt sets FFBLoopWait to false
+	bool waited_ok = wait(FFBLoopWait);
+
+	if (restore_pc_sampling) {
+		DWT->CTRL |= DWT_CTRL_PCSAMPLENA_Msk;
+	}
+
+	if (!waited_ok) {
+		// we must have missed the interrupt or something has been misconfigured
+		return false;
+	}
+
+	FFBLoopWait = true;
+
+	float effectTorque = 0.0;
+	float effectTorque_for_filtering = 0.0;//torque that will go through reconstruction filter as well
+
+	if(!IRFFBModeEnabled) {
+		calculate_effects_torque(effectTorque, effectTorque_for_filtering);
+	} else {
+		//IRFFB MODE (not implemented at all)
+        effectTorque += irFFBEffects();
+	}
+
+	endstop_effect.totalOut(this->axisSpeedPerMs, effectTorque_for_filtering, effectTorque);
+
+	/* EFFECT SCALING FOR SIMPLEMOTION */
+	// this command needs to be scaled to suitable range for Simplemotion:
+
+	const float deviceGain = this->ffbDevGain / 255.0f;
+
+    effectTorque *= deviceGain;
+    effectTorque_for_filtering *= deviceGain;
+
+	const int32_t smcommand = scaleEffectForSimplemotion(effectTorque);
+	const int32_t smcommand_for_filtering = scaleEffectForSimplemotion(effectTorque_for_filtering);
+
+	// toggle clipping led/led color
+	setClippingLed(smcommand_for_filtering + smcommand);
+
+	torqueCommand(smcommand_for_filtering, smcommand);
+
+	return true;
 }
 
-s32 cFFBDevice::scaleEffectForSimplemotion(float inputval) {
+bool cFFBDevice::zeroTorqueCommand() {
+	if (!FFBLoopWait) {
+		FFBLoopWait = true;
+		torqueCommand(0, 0);
+
+		torqueOffSavingDelay = 1;
+		torqueOffSavingDelayStart = millis;
+		return true;
+	}
+
+	return false;
+}
+
+void cFFBDevice::torqueCommand(int32_t filtered, int32_t direct) {
+	int8_t wirelessTorqueStatus = inputDeviceList.getTorqueButtonState();
+	switch(wirelessTorqueStatus) {
+	case -1: // Torque button not pressed, torque off
+		wirelessTorqueOffButton=1;
+		break;
+	case 0: // No torque button
+	case 1: // Torque button pressed, torque on
+		wirelessTorqueOffButton=0;
+		break;
+	default:
+		break;
+	}
+
+	if(torqueOffSavingDelay==1) {
+
+		const uint64_t since = millis - torqueOffSavingDelayStart;
+		const uint64_t limit = 5000;
+
+		if (since > limit) {
+			torqueOffSavingDelay=0;
+		} else {
+			float c = (float)since / (float)limit;
+			filtered = (int32_t)((float)filtered * c);
+			direct = (int32_t)((float)direct * c);
+		}
+	}
+
+	TorqueResponse resp;
+
+	if(forcesEnabled==0 || wirelessTorqueOffButton==1 || wirelessTorqueOffEvent==1) {
+		resp = SetTorque(0, 0);
+		lastTorqueSummed = 0;
+	} else {
+		resp = SetTorque(filtered, direct);
+		lastTorqueSummed = filtered + direct;
+	}
+
+	{
+		auto now = DWT->CYCCNT;
+
+		if (torque_last_sent != 0) {
+			// if you are interested in jitter, use SWO and DWT to track writes to &between_torque_sends.
+			// with Atollic this means opening the SWV data trace view and configuring:
+			//
+			//  - disabling everything
+			//  - enable timestamps
+			//  - enable comparator one, track writes to a word (uint32_t) at &between_torque_sends
+			//
+			// after configuring, press the red recording button and enjoy the Atollic graphical experience.
+			// the result here is number of cycles or 1/144e6 seconds
+			between_torque_sends = now - torque_last_sent;
+		}
+
+		torque_last_sent = now;
+	}
+
+	angle.calcSteeringAngle(resp);
+}
+
+void cFFBDevice::setSWWIdleDisconnectStatus(uint8_t status) {
+	_swwIdleDisonnect = status;
+}
+
+void cFFBDevice::calculate_effects_torque(float& torquecommand, float& torquecommand_for_filtering) {
+	const uint32_t cpr = angle.getCPR();
+	uint8_t numEffects = 0;
+	float frictionTorq = 0.0;
+
+	ffbEffectUsage = 0;
+
+	for (uint8_t id = FIRST_EID; id <= MAX_EFFECTS; id++) {
+		volatile cEffectState* ef = ffbhandle->getEffectState(id);
+		if(ef->state != MEffectState_Playing && ef->state != MEffectState_Allocated)
+		{
+			continue;
+		}
+
+		numEffects++;
+		uint8_t effectType = 32; // invalid shift for uint32_t
+		int16_t magnitude = ef->magnitude;
+
+		switch (ef->type)
+		{
+		case USB_EFFECT_CONSTANT:
+			effectType = ConstantEffectBit;
+			torquecommand_for_filtering += constantForceEffect(ef);
+			break;
+		case USB_EFFECT_RAMP:
+			// not implemented yet
+			effectType = RampEffectBit;
+			break;
+		case USB_EFFECT_SQUARE:
+			effectType = SquareEffectBit;
+			torquecommand_for_filtering += squareEffect(ef, mConfig.profileConfigs[currentprofileindex].settings[addrSquareGain]);
+			break;
+		case USB_EFFECT_SINE:
+			if(ef->magnitude==0) {
+				// implement special case for rFactor2/RaceRoom/other ISI engine games, that do not use USB_EFFECT_CONSTANT
+				// but use USB_EFFECT_SINE with magnitude = 0 and offset = force level.
+				effectType = PeriodSineConstantEffectBit;
+				magnitude = ef->offset;
+				torquecommand_for_filtering+=sineEffect(ef, mConfig.profileConfigs[currentprofileindex].settings[addrSineGain]);
+			} else {
+				effectType = PeriodSineChangingEffectBit;
+				magnitude = ef->magnitude;
+				torquecommand_for_filtering+=sineEffect(ef, mConfig.profileConfigs[currentprofileindex].settings[addrSineGain]);
+			}
+			break;
+		case USB_EFFECT_TRIANGLE:
+			effectType = TriangleEffectBit;
+			torquecommand_for_filtering+=triangleEffect(ef, mConfig.profileConfigs[currentprofileindex].settings[addrTriangleGain]);
+			break;
+		case USB_EFFECT_SAWTOOTHDOWN:
+			effectType = SawtoothDownEffectBit;
+			torquecommand_for_filtering += sawtoothDownEffect(ef, mConfig.profileConfigs[currentprofileindex].settings[addrSawtoothGain]);
+			break;
+		case USB_EFFECT_SAWTOOTHUP:
+			effectType = SawtoothUpEffectBit;
+			torquecommand_for_filtering += sawtoothUpEffect(ef, mConfig.profileConfigs[currentprofileindex].settings[addrSawtoothGain]);
+			break;
+		case USB_EFFECT_SPRING:
+			effectType = SpringEffectBit;
+			torquecommand_for_filtering += springEffect(ef, mConfig.profileConfigs[currentprofileindex].settings[addrSpringGain]);
+			break;
+		case USB_EFFECT_FRICTION:
+			effectType = FrictionEffectBit;
+			frictionTorq = frictionEffect(angle.getCurrentEncoderValue(), cpr, ef, mConfig.profileConfigs[currentprofileindex].settings[addrFrictionGain]);
+			break;
+		case USB_EFFECT_DAMPER:
+			effectType = DampingEffectBit;
+			torquecommand += calcDampingEffect(mConfig.profileConfigs[currentprofileindex].settings[addrDamperGain], axisSpeedPerMs, ef, dampingForceLPF);
+			break;
+		case USB_EFFECT_INERTIA:
+			// not implemented yet
+			effectType = InertiaEffectBit;
+			break;
+		case USB_EFFECT_CUSTOM:
+			// not implemented yet.
+			effectType = CustomEffectBit;
+			break;
+		default:
+			break;
+		}
+
+		if (effectType < 32) {
+			ffbEffectUsage |= (1 << effectType);
+			updateEffectCounters(magnitude, effectType);
+		}
+	}
+
+	/* FFB FILTERING STUFF */
+
+	if (mConfig.profileConfigs[currentprofileindex].settings[addrFilteringModes]&(1<<bitTestFilter)) {
+		// other filter development can be done here, for example. Define bits like testFilter, and assign new variables in profiles settings if required.
+	}
+
+	/* DESKTOP SPRING EFFECT */
+	if(numEffects==0) {
+		torquecommand_for_filtering += desktopSpringEffect(mConfig.hardwareConfig.hwSettings[addrDesktopSpringGain]);
+	}
+
+	/* PROCESS INERTIA, FRICTION AND DAMPING EFFECTS */
+
+	// as friction is unimplmemented, these do nothing
+	const float some_coefficient = 256.0f * 256.0f; // experimented to be in correct scale
+	const float really_no_idea_what_this_is_and_why = -frictionTorq * some_coefficient;
+
+	torquecommand -= really_no_idea_what_this_is_and_why;
+}
+
+int32_t cFFBDevice::scaleEffectForSimplemotion(float inputval) {
 
 	//max possible value for val is +/-
 	//10000*255 and it needs to scaled to +/- 16384
 	// -> output = inputval/maxvalue*maxoutput
 	//           = inputval*maxoutput/maxvalue
-	s32 returnvalue = 0;
 	const float maxoutvalue = 16384.0;
-	const float maxinputvalue = 2550000.0; //255 * 10000
-	float temp = inputval*maxoutvalue;
-	float output = temp/maxinputvalue;
-	if(output>=0.0) {
-		returnvalue = (s32)(output);//+0.5);
-	}
-	else {
-		returnvalue = (s32)(output);//-0.5);
-	}
-	if(returnvalue > 16384) {
-		//clipping
-		returnvalue = 16384;
-	} else if (returnvalue < -16384) {
-		returnvalue = -16384;
-	}
-	//printf("%d\r\n", returnvalue);
-	if(returnvalue > clipping_led_threshold) {
-		// possibly turn a led on here
-		if(clippingLedOn==false) {
-			clippingLedOn=true;
-			HAL_GPIO_WritePin(LED1_CLIPPING_OUT_GPIO_Port, LED1_CLIPPING_OUT_Pin, GPIO_PIN_SET);  // sets pin high
-		}
+	const float maxinputvalue = 255 * 10000.0;
 
-	} else if (returnvalue < -clipping_led_threshold) {
-		if(clippingLedOn==false) {
-			clippingLedOn=true;
-			HAL_GPIO_WritePin(LED1_CLIPPING_OUT_GPIO_Port, LED1_CLIPPING_OUT_Pin, GPIO_PIN_SET);  // sets pin high
-		}
-	} else if (clippingLedOn==true) {
-		clippingLedOn=false;
-		HAL_GPIO_WritePin(LED1_CLIPPING_OUT_GPIO_Port, LED1_CLIPPING_OUT_Pin, GPIO_PIN_RESET);  // sets pin low
+	const float output = inputval * (maxoutvalue / maxinputvalue);
+
+	if (isnan(output)) {
+		// fmax and fmin will select the non-NaN component but we do not want to have -maxoutvalue
+		// if some calculation failed
+		return 0;
 	}
-	//printf("%d\r\n", returnvalue);
 
-
-	return returnvalue;
+	// clamp output between -max and max before casting it to int32_t in order
+	// to avoid UB when output does not fit into int32_t or is nan or inf
+	return (int32_t)fmin(maxoutvalue, fmax(-maxoutvalue, output));
 }
 
-// this function should be called when mMaxAngle or profile endstop settings is being changed.
+// this function should be called when any hardware or profile settings has been being changed.
 void cFFBDevice::initVariables() {
-	float halfAngle = 0.0f;
+
+	int32_t cpr = angle.getCPR();
+	float LPFfreq = fmax(4.0, fmin(30.0, 4*cpr/1000.0)); //4 is good value for even 1024ppr
+
+	inertiaLPF.setBiquad(Biquad1StOrder::bq_type_lowpass_1st_order, LPFfreq/DRIVEUPDATERATE);
+	dampingLPF.setBiquad(Biquad1StOrder::bq_type_lowpass_1st_order, 1250.0/DRIVEUPDATERATE);
+	dampingForceLPF.setBiquad(Biquad1StOrder::bq_type_lowpass_1st_order, 200.0/DRIVEUPDATERATE);
+	frictionForceLPF.setBiquad(Biquad1StOrder::bq_type_lowpass_1st_order, 200.0/DRIVEUPDATERATE);
+
+	desktopDampingLPF.setBiquad(Biquad1StOrder::bq_type_lowpass_1st_order, 200.0/DRIVEUPDATERATE);
+
+	// FIXME: unknown why this has different fc than the most
+	axisSpeedMsLPF.setBiquad(Biquad1StOrder::bq_type_lowpass_1st_order, 100.0/DRIVEUPDATERATE);
+
+	float max_angle = 0.0f;
 	if(!temporarySteeringAngleIsSet) {
-		// init min and max steering angles based on user profile.
-		//minSteeringAngle = (-1)*mConfig.profileConfig.mMaxAngle/2;
-		halfAngle = (float)(mConfig.profileConfigs[currentprofileindex].mMaxAngle);
+		max_angle = (float)(mConfig.profileConfigs[currentprofileindex].settings[addrMaxAngle]);
 	} else {
-		halfAngle = (float)(temporarySteeringLockToLock);
-	}
-	halfAngle = halfAngle/2.0;
-	maxSteeringAngle = halfAngle;
-	minSteeringAngle = halfAngle*(-1.0);
-	minSteeringAngleForStop = minSteeringAngle + (float)mConfig.profileConfigs[currentprofileindex].endstopOffsetAngleDegrees;
-	maxSteeringAngleForStop = maxSteeringAngle - (float)mConfig.profileConfigs[currentprofileindex].endstopOffsetAngleDegrees;
-	float endstopdampergaintemp = ((float)mConfig.hardwareConfig.mStopsDamperGain);
-	endstopdampergain = endstopdampergaintemp/100.0;
-	endstopMaxTorque = (float)mConfig.hardwareConfig.mStopsMaxForce*100.0*255.0;
-	int cpr=mConfig.hardwareConfig.mEncoderCPR;
-	float LPFfreq=4*cpr/1000.0; //4 is good value for even 1024ppr
-	limit(LPFfreq,4.0,30.0);
-	inertiaLPF.setBiquad(Biquad1StOrder::bq_type_lowpass_1st_order,LPFfreq/2500);
-	dampingLPF.setBiquad(Biquad1StOrder::bq_type_lowpass_1st_order, 1250.0/2500.0);
-	dampingForceLPF.setBiquad(Biquad1StOrder::bq_type_lowpass_1st_order, 200.0/2500.0);
-	frictionForceLPF.setBiquad(Biquad1StOrder::bq_type_lowpass_1st_order, 200.0/2500.0);
-	axisSpeedMsLPF.setBiquad(Biquad1StOrder::bq_type_lowpass_1st_order, 100.0/2500.0);
-	desktopDampingLPF.setBiquad(Biquad1StOrder::bq_type_lowpass_1st_order, 200.0/2500.0);
-	endStopDampingLPF.setBiquad(Biquad1StOrder::bq_type_lowpass_1st_order, 200.0/2500.0);
-	prevEffectCalcTime = 0-1;
-
-	axisPos = 32768;
-
-}
-
-extern s32 encoderPos32;
-
-uint16_t cFFBDevice::calcSteeringAngle(s32 encoderCounter)  {
-	float steeringAngle = 0.0;
-	if(temporaryCenterPoint == true) {
-		steeringAngle = (float)(encoderCounter-mEncoderTemporaryOffset)/(float)mConfig.hardwareConfig.mEncoderCPR*360.0;
-	} else {
-		switch(mConfig.hardwareConfig.mIndexingMode ) {
-		case startAtCenterPhasedIndexing:
-			steeringAngle = (float)(encoderCounter+mConfig.hardwareConfig.mEncoderOffset-phasingEndOffset)/(float)mConfig.hardwareConfig.mEncoderCPR*360.0;
-			break;
-		case indexPointIndexing:
-			steeringAngle = (float)(encoderCounter-indexPointEncPos+mConfig.hardwareConfig.mEncoderOffset)/(float)mConfig.hardwareConfig.mEncoderCPR*360.0;
-			break;
-		case autoCommutationIndexing:
-			steeringAngle = (float)(encoderCounter-mConfig.hardwareConfig.mEncoderOffset-absoluteFullRotOffset)/(float)mConfig.hardwareConfig.mEncoderCPR*360.0;
-			break;
-		default:
-			steeringAngle = 0.0;
-			break;
-		}
+		max_angle = (float)(temporarySteeringLockToLock);
 	}
 
-	// calculations for endstop effect
-	if(mConfig.hardwareConfig.mStopsEnabled == 1) {
-		if(steeringAngle < (minSteeringAngleForStop + (float)mConfig.hardwareConfig.mStopsRangeDegrees)) {
-			//steeringAngle = minSteeringAngle;
-			HAL_GPIO_WritePin(LED3_OUT_GPIO_Port, LED3_OUT_Pin, GPIO_PIN_SET);
-			degrees_from_endstop = -minSteeringAngleForStop + steeringAngle;
-			endstopDirection = false;
-			overendstop=1;
-		} else if (steeringAngle > (maxSteeringAngleForStop - (float)mConfig.hardwareConfig.mStopsRangeDegrees)) {
-			//steeringAngle = maxSteeringAngle;
-			HAL_GPIO_WritePin(LED3_OUT_GPIO_Port, LED3_OUT_Pin, GPIO_PIN_SET);
-			degrees_from_endstop = maxSteeringAngleForStop - steeringAngle;
-			endstopDirection = true;
-			overendstop=-1;
-		} else {
-			HAL_GPIO_WritePin(LED3_OUT_GPIO_Port, LED3_OUT_Pin, GPIO_PIN_RESET);
-			degrees_from_endstop = 500000.0;
-			overendstop=0;
-		}
-	}
-	steeringAngleUnlimited = steeringAngle;
-	// limit the actual angle visible to games
-	if(steeringAngle < minSteeringAngle) {
-		steeringAngle = minSteeringAngle;
-	} else if (steeringAngle > maxSteeringAngle) {
-		steeringAngle = maxSteeringAngle;
-	}
-	// this does things correctly if invertSteeringValue is
-	// an int of -1 or 1:
-	// int steering = mConfig.hardwareConfig.invertSteeringValue*(steeringAngle/maxSteeringAngle*32768)  + 32768;// + 0.5);
-	// Now it is boolean. Code below fixes it.
+	angle.setCenteringMode(mConfig.hardwareConfig.hwSettings[addrIndexingMode]);
+	angle.setMinMaxSteeringAngles(max_angle);
 
-	// with boolean value, have to make the calculation in separate steps.
-	int steering = steeringAngle/maxSteeringAngle*32768;
-	if(mConfig.hardwareConfig.invertSteeringValue == true) steering = -steering;
-	steering = steering + 32768;
+	endstop_effect.refresh(true,
+	        mConfig.profileConfigs[currentprofileindex].settings[addrEndstopOffset],
+	        mConfig.profileConfigs[currentprofileindex].settings[addrBumpstopSetting],
+		max_angle,
+		200.0f/DRIVEUPDATERATE,
+		&angle);
 
-	if(steering < 0 ) {
-		steering = 0;
-	}
-	else if (steering > 65535) {
-		steering = 65535;
-	}
-	uint16_t steeringReturnValue = steering;
-
-	axisPos = (s32)steeringReturnValue;
-	axisPosFloat = steeringAngle/maxSteeringAngle*32768.0f+32768.0f;
-	constrain(axisPosFloat, 0.0f, 65535.0f);
-	return steeringReturnValue;
+	// middle position momentarily, proper value with possibly new
+	// steering angle (lock-to-lock) setting will be calculated
+	// in the next effect command.
+	angle.setUSBAngle(32768);
+	initHwEncoderButtons();
+	setBLEAutoConnectMode();
 }
 
 
 void cFFBDevice::setWheelCenter() {
-	// 1) save current encoder pos to mConfig.hardwareConfig.mEncoderOffset
-	smint32 positionFB=0;
-	volatile int p1,p2;
-	p1=SetTorque(0);//call this twice to have 16 bit differential encoder unwrapper initialized
-	smRead1Parameter(mSMBusHandle, 1, SMP_ACTUAL_POSITION_FB_NEVER_RESETTING, &positionFB);//read 32 bit position
-	simucubelog.addEventParam(96, positionFB, true);
-	//return true;
+	int32_t offset = 0;
+	TorqueResponse resp = SetTorque(0,0);
 
-	if(temporaryCenterPoint == true) {
-		mEncoderTemporaryOffset = positionFB;//positionFB;
-	}
-	else if (mConfig.hardwareConfig.mIndexingMode == autoCommutationIndexing) {
-		mConfig.hardwareConfig.mEncoderOffset = positionFB;
-	}
-	else if (mConfig.hardwareConfig.mIndexingMode == startAtCenterPhasedIndexing){
-		simucubelog.addEventParam(97, phasingEndOffset-positionFB, true);
-		mConfig.hardwareConfig.mEncoderOffset = phasingEndOffset-positionFB; //positionFB+phasingEndOffset;//positionFB;
-	}
-	else if (mConfig.hardwareConfig.mIndexingMode == indexPointIndexing) {
-		simucubelog.addEventParam(98, phasingEndOffset-positionFB, true);
-		mConfig.hardwareConfig.mEncoderOffset = indexPointEncPos-positionFB;
+	SM_STATUS stats = SM_OK;
+	int32_t indexingMode = angle.getCenteringMode();
+	switch(indexingMode) {
+	case noIndexing:
+		// not possible/not set, do nothing
+		break;
+	case startAtCenterPhasedIndexing:
+		stats = smSetParameter(mSMBusHandle, 1, SMP_SIMUCUBE_WHEEL_CENTER_OFFSET, -1);
+		//readback
+		stats = smRead1Parameter(mSMBusHandle, 1,SMP_SIMUCUBE_WHEEL_CENTER_OFFSET, &offset);
+		if(debugMode) {
+			printf("setWheelCenter: new offset = %ld\r\n", offset);
+		}
+		simucubelog.addEventParam(96, offset, true);
+
+		if(!temporaryCenterPoint) {
+			mConfig.hardwareConfig.hwSettings[addrEncoderOffset] = offset;
+			unsavedSettings = 1;
+		} else {
+			mEncoderTemporaryOffset = offset;
+		}
+		angle.reset();
+		break;
+	case indexPointIndexing:
+		// for index point indexing, need to get latest value from torqueresponse.
+		offset = resp.position;
+		if(!temporaryCenterPoint) {
+			if(debugMode) {
+				printf("indexpoint center, offset %ld\r\n", offset);
+			}
+			mConfig.hardwareConfig.hwSettings[addrEncoderOffset] = offset;
+			angle.setIndexpointOffset(offset);
+		} else {
+			mEncoderTemporaryOffset = offset;
+		}
+		break;
+	case autoCommutationIndexing:
+		// this case matches simucube 2 exactly
+		stats = smSetParameter(mSMBusHandle, 1, SMP_SIMUCUBE_WHEEL_CENTER_OFFSET, -1);
+		//readback
+		stats = smRead1Parameter(mSMBusHandle, 1,SMP_SIMUCUBE_WHEEL_CENTER_OFFSET, &offset);
+		if(debugMode) {
+			printf("setWheelCenter: new offset = %ld\r\n", offset);
+		}
+		simucubelog.addEventParam(96, offset, true);
+
+		if(!temporaryCenterPoint) {
+			mConfig.hardwareConfig.hwSettings[addrEncoderOffset] = offset;
+			unsavedSettings=1;
+		} else {
+			mEncoderTemporaryOffset = offset;
+		}
+		angle.reset();
+		break;
 	}
 }
 
@@ -667,8 +595,9 @@ void cFFBDevice::updateButtons() {
 		return;
 	}
 	lastButtonUpdateMillis = millis;
-	uint8_t debounce = mConfig.hardwareConfig.buttonDebounceMillis;
-	for(int i=0; i<16; i++) {
+	uint8_t debounce = mConfig.hardwareConfig.hwSettings[addrButtonDebounceMs];
+	int numButtons = getNumberOfButtons();
+	for(int i=0; i<numButtons; i++) {
 		button_currentState[i] = HAL_GPIO_ReadPin(button_port[i], button_pin[i]);
 		if((button_currentState[i] != button_debouncedState[i]) && ((button_lastUpdate[i]+debounce) < millis)) {
 			button_debouncedState[i] = button_currentState[i];
@@ -677,10 +606,127 @@ void cFFBDevice::updateButtons() {
 	}
 }
 
-bool cFFBDevice::loadConfigsFromFlash() {
 
-#if 1
-	volatile uint32_t idstring = *(uint32_t*)settingsStartAddress;
+void cFFBDevice::handleWirelessEvents() {
+
+	bool disconnected = false;
+	// handle auto idle disconnect
+	if(!_swwautodisconnecthandler.run()) {
+		if(debugMode) printf("wireless wheel inactivity disconnect");
+		simucubelog.addEvent(BLEInactivityDisconnect);
+	}
+
+	if (inputDeviceList.getPaddlesPressedOver5s()) {
+		if (debugMode) {
+			printf("Disconnect after having paddles pressed over 5s\r\n");
+		}
+		BLEConn.disconnectFromDevice();
+		BLEConn.lastButtonState = 0;
+		inputDeviceList.process(0);
+		disconnected = true;
+	} else {
+		bool previousConnectionState = lastWirelessConnectionState;
+		lastWirelessConnectionState = BLEConn.getConnectionState();
+		disconnected = previousConnectionState && !lastWirelessConnectionState;
+	}
+
+	if (disconnected) {
+        if(inputDeviceList.getTorqueButtonState()){
+            wirelessTorqueOffEvent = 1;
+        }
+		lastWirelessVoltage = 0;
+		SMPlaySound(Disconnected);
+		inputDeviceList.clearConfiguration();
+		return;
+	}
+
+	if (!lastWirelessConnectionState) {
+		return;
+	}
+
+	uint16_t currentVoltage = BLEConn.getBatteryVoltage();
+	if(lastWirelessVoltage == 0 && currentVoltage != 0) {
+
+        LowBatteryWarning warning = BLEConn.getLowBatteryWarning();
+        switch(warning) {
+            case LowBatteryWarning::NoWarning:
+                lastWirelessVoltage = currentVoltage; // no further checks
+                break;
+            case LowBatteryWarning::Warning:
+                lastWirelessVoltage = currentVoltage;
+                SMPlaySound(LowBattery);
+                break;
+            default:
+                break;
+        }
+		if(currentVoltage < 2700) {
+			// TODO: change this limit for release ... has not been changed
+			// play sound anyway if <2700 mV is seen
+			SMPlaySound(LowBattery);
+			lastWirelessVoltage = currentVoltage; // no further checks
+		}
+	}
+}
+
+// checks if loaded flash data was such that it should be re-initialized
+bool cFFBDevice::checkIfPre012Data() {
+	if(flashMajorVersion == 0) {
+		if(flashMinorVersion < 12) {
+			return true;
+		}
+	}
+	return false;
+}
+
+bool cFFBDevice::checkIfPre10000Data() {
+	if(flashMajorVersion<1) {
+		return true;
+	}
+	return false;
+}
+
+// initializes those hardware setting and profile parameters to 0 that <0.12.x series configuration tools could have
+// sent to the device as random (uninitialized) parameters
+void cFFBDevice::initUninitializedProfileParametersPre012() {
+	for(unsigned int i = 0; i < maxnumprofiles_v11; i++) {
+		for(unsigned int j = 19; j < numberOfProfAddrs; j++) {
+			mConfig.profileConfigs[i].settings[j] = 0;
+		}
+	}
+	simucubelog.addEvent(flashRewritePre01200, true);
+}
+
+void cFFBDevice::resetParametersPre10000() {
+	for(unsigned int i = 0; i < maxnumprofiles_v11; i++) {
+		// static force might be initialized as bogus value, set it to 0
+		mConfig.profileConfigs[i].settings[addrStaticForceReduction] = 0;
+	}
+	mConfig.hardwareConfig.hwSettings[addrEncoderOffset] = 0;
+	mConfig.hardwareConfig.hwSettings[addrDesktopSpringGain] = 0;
+	simucubelog.addEvent(flashRewritePre10000, true);
+}
+
+void cFFBDevice::adjustAnyWheelConnection() {
+	if(flashMajorVersion == 1 && flashMinorVersion == 0 && flashBuildVersion<24) {
+		int32_t oldsetting = mConfig.hardwareConfig.hwSettings[addrAutoConnectBLEDevice];
+		// old no  		= 2, new = 1
+		// old yes 		= 1, new = 0;
+		// old yes_any  = 0, new = 0;
+		oldsetting--;
+		if(oldsetting < 0) {
+			oldsetting = 0;
+		}
+		mConfig.hardwareConfig.hwSettings[addrAutoConnectBLEDevice] = oldsetting;
+	}
+}
+
+bool cFFBDevice::fillFlashZeroes(uint32_t startAddress, uint32_t length) {
+	// flash erase fills with 0xFFFF. Do not do anything here.
+	return true;
+}
+
+bool cFFBDevice::loadConfigsFromFlash() {
+	volatile uint32_t idstring = *(uint32_t*)SETTINGSSTARTADDRESS;
 	uint8_t b = (idstring >> 24);
 	uint8_t c = (idstring >> 16) & 0xFF;
 	uint8_t m = (idstring >> 8)  & 0xFF;
@@ -690,22 +736,17 @@ bool cFFBDevice::loadConfigsFromFlash() {
 		simucubelog.addEvent(flashEmpty);
 		return false;
 	}
-	volatile uint32_t verstring = *(uint32_t*)(settingsStartAddress+4);
 
-	uint8_t flashMajorVersion = (verstring) & 0xFF;
-	uint8_t flashMinorVersion = (verstring >> 8)  & 0xFF;
-	uint8_t flashBuildVersion = (verstring >> 16) & 0xFF;
+	volatile uint32_t verstring = *(uint32_t*)(SETTINGSSTARTADDRESS+4);
+
+	flashMajorVersion = (verstring) & 0xFF;
+	flashMinorVersion = (verstring >> 8)  & 0xFF;
+	flashBuildVersion = (verstring >> 16) & 0xFF;
 
 	// too old checks
 	if(flashMajorVersion < lowestCompatibleFlashSettingsMajorVersion) {
-		if(debugMode) printf("reading flash failed: too old major settings on flash!\r\n");
+		if(debugMode) printf("reading flash status: too old major settings on flash!\r\n");
 		simucubelog.addEvent(flashTooOldMajor);
-		return false;
-	}
-	if((flashMajorVersion == lowestCompatibleFlashSettingsMajorVersion)
-			&& (flashMinorVersion < lowestCompatibleFlashSettingsMinorVersion)) {
-		if(debugMode) printf("reading flash failed: too old minor settings on flash!\r\n");
-		simucubelog.addEvent(flashTooOldMinor);
 		return false;
 	}
 
@@ -715,34 +756,106 @@ bool cFFBDevice::loadConfigsFromFlash() {
 		simucubelog.addEvent(flashTooNewMajor);
 		return false;
 	}
-	if((flashMinorVersion > firmwareVersion[minorVersionIdx])
-			&& (flashMajorVersion == lowestCompatibleFlashSettingsMajorVersion)) {
-		if(debugMode) printf("reading flash failed: too new minor settings on flash!\r\n");
-		simucubelog.addEvent(flashTooNewMinor);
-		return false;
-	}
 
-	// right major and minor versions found.
+	bool sameMajorVersion = (flashMajorVersion == firmwareVersion[majorVersionIdx]);
 
-	if(flashBuildVersion<firmwareVersion[buildVersionIdx] ||  flashMinorVersion<firmwareVersion[minorVersionIdx]) {
+	if(sameMajorVersion) {
+		if((flashMinorVersion > firmwareVersion[minorVersionIdx])
+				&& (flashMajorVersion == lowestCompatibleFlashSettingsMajorVersion)) {
+			if(flashMajorVersion>firmwareVersion[majorVersionIdx]) {
+				if(debugMode) printf("reading flash failed: too new settings on flash!\r\n");
+				simucubelog.addEvent(flashTooNewMinor);
+				return false;
+			}
+		}
+	} // else majorversion rollover, do not do any checks
+
+	// compatible major and minor versions found.
+
+	if(flashBuildVersion<firmwareVersion[buildVersionIdx]
+        ||  flashMinorVersion<firmwareVersion[minorVersionIdx]
+		||  !sameMajorVersion) {
 		// need to write read-only default profile again.
 		rewriteDefault = true;
 	}
 
-	uint32_t sourceaddr = settingsStartAddress+7;
-	uint8_t* destAddress = mConfig.GetHardwareConfigAddr();
-	for(uint32_t i = 0; i<sizeof(hwData); i++) {
-		*destAddress = *(uint8_t*)(sourceaddr);
-		destAddress++;
-		sourceaddr++;
+	if(flashMajorVersion == 0 && flashMinorVersion<11) {
+		if(debugMode) printf("reading flash status: too old minor settings on flash!\r\n");
+		simucubelog.addEvent(flashTooOldMinor);
+		return false;
 	}
-	destAddress = mConfig.GetAnalogConfigAddr();
-	for(uint32_t i = 0; i<sizeof(analogData); i++) {
-		*destAddress = *(uint8_t*)(sourceaddr);
-		destAddress++;
+
+	bool doCRC = false;
+	if((flashMajorVersion==0)) {
+		if(flashMinorVersion>=11) {
+			// handles simucube 1 >=0.11.x
+			if((flashMinorVersion==11)) {
+				if((flashBuildVersion< 7)) {
+					doCRC=false;
+				} else {
+					doCRC=true;
+				}
+			} else {
+				doCRC=true;
+			}
+		} else {
+			// handles simucube 1 < 0.11.x
+			doCRC=false;
+		}
+	} else if (flashMajorVersion>0) {
+		// handles simucube 1 (1.x.x) and simucube 2 (all versions)
+		doCRC = true;
+	}
+
+	if(doCRC) {
+		// flash crc is stored at 0.11.6 and up
+		bool valid = checkFlashCRC();
+		if(!valid) {
+			if(debugMode) printf("flash crc32 invalid\r\n");
+			simucubelog.addEventParam(flashDataInvalid, 1);
+			rewriteDefault = true;
+			return false;
+		}
+		if(debugMode) printf("flash crc32 valid\r\n");
+	}
+
+	uint32_t sourceaddr = HWSETTINGSADDRESS;
+
+	// read hardware configs
+	for(int i = 0; i< numberOfHwSettingsAddrs; i++) {
+		mConfig.hardwareConfig.hwSettings[i] = *(int32_t*)sourceaddr;
+		sourceaddr+=4;
+	}
+	//bytestore
+	for(int i = 0; i<256; i++) {
+		mConfig.hardwareConfig.bytestore[i] = *(uint8_t*)sourceaddr;
 		sourceaddr++;
 	}
 
+
+	// analog axises
+	sourceaddr=ANALOGSETTINGSADDRESS;
+	for(int analogconf = 0; analogconf<maxnumanalogconfigs; analogconf++) {
+		for(int analogaxis = 0; analogaxis<7; analogaxis++) {
+			for(int analogsetting = 0; analogsetting<numberOfAnalogSettingsAddrs; analogsetting++) {
+				mConfig.analogConfig[analogconf].axises[analogaxis].settings[analogsetting] = *(int32_t*)sourceaddr;
+				sourceaddr+=4;
+			}
+		}
+		for(int bytestoreint = 0; bytestoreint<32; bytestoreint++) {
+			mConfig.analogConfig[analogconf].bytestore[bytestoreint] = *(uint8_t*)sourceaddr;
+			sourceaddr++;
+		}
+	}
+
+	// buttons
+	sourceaddr=BUTTONSSETTINGSADDRESS;
+	for(int i = 0; i< numberofbuttonsettings; i++) {
+		mConfig.buttonConfig.settings[i] = *(int32_t*)sourceaddr;
+		sourceaddr+=4;
+	}
+
+	sourceaddr=PROFILESETTINGSADDRESS;
 	/* read number of profiles, low and high bytes */
 	uint8_t bytelo = *(uint8_t*)sourceaddr; sourceaddr++;
 	uint8_t bytehi = *(uint8_t*)sourceaddr; sourceaddr++;
@@ -754,90 +867,107 @@ bool cFFBDevice::loadConfigsFromFlash() {
 	defaultprofileindex = bytelo + (bytehi << 8);
 	currentprofileindex=defaultprofileindex;
 
-#if 0
-	for (int i = 0; i<maxnumprofiles; i++) {
-		destAddress = mConfig.GetProfileConfigAddr(i);
-		for(uint32_t i = 0; i<sizeof(profData); i++) {
-			*destAddress = *(uint8_t*)(sourceaddr);
-			destAddress++;
+
+	// profiles
+	for(int profileidx = 0; profileidx<maxnumprofiles_v11; profileidx++) {
+		//addrs
+		for(int profileaddr=0; profileaddr<numberOfProfAddrs; profileaddr++) {
+			mConfig.profileConfigs[profileidx].settings[profileaddr] = *(int32_t*)sourceaddr;
+			sourceaddr+=4;
+		}
+		//names
+		for(int namebyte=0; namebyte<32; namebyte++) {
+			mConfig.profileConfigs[profileidx].profilename[namebyte] = *(uint8_t*)sourceaddr;
 			sourceaddr++;
 		}
-	}
-#endif
-#if 1
-	uint16_t size = sizeof(profData);
-	uint8_t startbyteindex=profileDataByteSplitIndex;
-
-	// 1st 55 byte pages
-	for (int i = 0; i<maxnumprofiles; i++) {
-		destAddress = mConfig.GetProfileConfigAddr(i);
-		for(uint32_t i = 0; i<startbyteindex; i++) {
-			*destAddress = *(uint8_t*)(sourceaddr);
-			destAddress++;
+		//bytestores
+		for(int storebyte=0; storebyte<32; storebyte++) {
+			mConfig.profileConfigs[profileidx].bytestore[storebyte] = *(uint8_t*) sourceaddr;
 			sourceaddr++;
 		}
+		mConfig.validateProfile(profileidx);
 	}
 
-	// 2nd pages
-	for (int i = 0; i<maxnumprofiles; i++) {
-		destAddress = mConfig.GetProfileConfigAddr(i)+startbyteindex;
-		for(uint32_t i = startbyteindex; i<size; i++) {
-			*destAddress = *(uint8_t*)(sourceaddr);
-			destAddress++;
-			sourceaddr++;
-		}
+	if(flashMajorVersion<1 && flashMinorVersion<50) {
+		mConfig.hardwareConfig.convertDesktopSpring();
+		// set new parameters for 1.0.0 version:
 	}
-#endif
-
-#endif
-
-#if 0
-	destAddress = mConfig.GetProfileConfigAddr();
-	for(int i = 0; i<sizeof(profData); i++) {
-		*destAddress = *(uint8_t*)(sourceaddr);
-		destAddress++;
-		sourceaddr++;
-	}
-#endif
 	return true;
 
 }
 
+
+
+
+// Reverses (reflects) bits in a 32-bit word.
+uint32_t cFFBDevice::reverse(uint32_t x) {
+   x = ((x & 0x55555555) <<  1) | ((x >>  1) & 0x55555555);
+   x = ((x & 0x33333333) <<  2) | ((x >>  2) & 0x33333333);
+   x = ((x & 0x0F0F0F0F) <<  4) | ((x >>  4) & 0x0F0F0F0F);
+   x = (x << 24) | ((x & 0xFF00) << 8) |
+       ((x >> 8) & 0xFF00) | (x >> 24);
+   return x;
+}
+
+// ----------------------------- crc32a --------------------------------
+uint32_t cFFBDevice::crc32a(const uint8_t *message, uint32_t datalength) {
+	uint32_t i, j;
+	uint32_t byte, crc;
+
+   i = 0;
+   crc = 0xFFFFFFFF;
+   while (i < datalength ) {
+      byte = message[i];            // Get next byte.
+      byte = reverse(byte);         // 32-bit reversal.
+      for (j = 0; j <= 7; j++) {    // Do eight times.
+         if ((int)(crc ^ byte) < 0)
+              crc = (crc << 1) ^ 0x04C11DB7;
+         else crc = crc << 1;
+         byte = byte << 1;          // Ready next msg bit.
+      }
+      i = i + 1;
+   }
+   return reverse(~crc);
+}
+
+
+bool cFFBDevice::checkFlashCRC() {
+	uint32_t totalCRC = crc32a((uint8_t*)SETTINGSSTARTADDRESS, SETTINGSENDADDRESS - 4 - SETTINGSSTARTADDRESS);
+	if(debugMode) printf("got %lu\r\n", totalCRC);
+	uint32_t savedCRCaddr = SETTINGSENDADDRESS -4;
+	uint32_t savedCRC = *(uint32_t*)savedCRCaddr;
+	if(debugMode) printf("saved was %lu\r\n", savedCRC);
+	if(savedCRC != totalCRC) {
+		return false;
+	}
+	return true;
+}
+
+
 bool cFFBDevice::saveConfigsToFlash() {
 	// unlock flash
 	HAL_FLASH_Unlock();
-	//HAL_FLASH_ClearFlag(FLASH_FLAG_EOP|FLASH_FLAG_PGERR|FLASH_FLAG_WRPRTERR);
-
 
 	// erase flash page
-	__HAL_FLASH_CLEAR_FLAG(FLASH_FLAG_EOP|FLASH_FLAG_PGPERR|FLASH_FLAG_WRPERR);
+	__HAL_FLASH_CLEAR_FLAG(FLASH_FLAG_EOP|FLASH_FLAG_PGPERR|FLASH_FLAG_WRPERR|FLASH_FLAG_PGSERR);
 	EraseInitStruct.TypeErase = TYPEERASE_SECTORS;
 	EraseInitStruct.VoltageRange = VOLTAGE_RANGE_3;
-	uint32_t FirstSector = GetSector(settingsStartAddress);
+	uint32_t FirstSector = GetSector(SETTINGSSTARTADDRESS);
 	uint32_t SectorError = 0;
 	EraseInitStruct.Sector = FirstSector;
 	EraseInitStruct.NbSectors = 1;//NbOfSectors;
 	//HAL_FLASH_ErasePage(startAddress);
 	if (HAL_FLASHEx_Erase(&EraseInitStruct, &SectorError) != HAL_OK)
 	{
-		/*
-		  Error occurred while sector erase.
-		  User can add here some code to deal with this error.
-		  SectorError will contain the faulty sector and then to know the code error on this sector,
-		  user can call function 'HAL_FLASH_GetError()'
-		*/
-		/*
-		  FLASH_ErrorTypeDef errorcode = HAL_FLASH_GetError();
-		*/
-		// Error_Handler();
 		if(debugMode) printf("Flash Sector Erase Error occurred.\r\n");
-		simucubelog.addEvent(flashWriteFailure);
+		volatile uint32_t errorcode = HAL_FLASH_GetError();
+		simucubelog.addEvent(flashWriteFailure, errorcode);
 		HAL_FLASH_Lock();
 		return false;
 	}
 
 	// write data.
-	uint32_t address = settingsStartAddress;
+	uint32_t address = SETTINGSSTARTADDRESS;
 
 	uint8_t s='S';
 	uint8_t m='M';
@@ -845,28 +975,28 @@ bool cFFBDevice::saveConfigsToFlash() {
 	uint8_t b='B';
 	// first write magic string
 	if (HAL_FLASH_Program(TYPEPROGRAM_BYTE, address, s) != HAL_OK) {
-		if(debugMode) printf("Flash Sector Write Error occurred.\r\n");
+		if(debugMode) printf("Flash Sector Write Error 1 occurred.\r\n");
 		HAL_FLASH_Lock();
 		simucubelog.addEventParam(flashWriteFailure,1);
 		return false;
 	}
 	address++;
 	if (HAL_FLASH_Program(TYPEPROGRAM_BYTE, address, m) != HAL_OK) {
-		if(debugMode) printf("Flash Sector Write Error occurred.\r\n");
+		if(debugMode) printf("Flash Sector Write Error 2 occurred.\r\n");
 		HAL_FLASH_Lock();
 		simucubelog.addEventParam(flashWriteFailure,2);
 		return false;
 	}
 	address++;
 	if (HAL_FLASH_Program(TYPEPROGRAM_BYTE, address, c) != HAL_OK) {
-		if(debugMode) printf("Flash Sector Write Error occurred.\r\n");
+		if(debugMode) printf("Flash Sector Write Error 3 occurred.\r\n");
 		HAL_FLASH_Lock();
 		simucubelog.addEventParam(flashWriteFailure,3);
 		return false;
 	}
 	address++;
 	if (HAL_FLASH_Program(TYPEPROGRAM_BYTE, address, b) != HAL_OK) {
-		if(debugMode) printf("Flash Sector Write Error occurred.\r\n");
+		if(debugMode) printf("Flash Sector Write Error 4 occurred.\r\n");
 		HAL_FLASH_Lock();
 		simucubelog.addEventParam(flashWriteFailure,4);
 		return false;
@@ -876,148 +1006,224 @@ bool cFFBDevice::saveConfigsToFlash() {
 
 	// write version info
 	if (HAL_FLASH_Program(TYPEPROGRAM_BYTE, address, firmwareVersion[majorVersionIdx]) != HAL_OK) {
-		if(debugMode) printf("Flash Sector Write Error occurred.\r\n");
+		if(debugMode) printf("Flash Sector Write Error 5 occurred.\r\n");
 		HAL_FLASH_Lock();
 		simucubelog.addEventParam(flashWriteFailure,5);
 		return false;
 	}
 	address++;
 	if (HAL_FLASH_Program(TYPEPROGRAM_BYTE, address, firmwareVersion[minorVersionIdx]) != HAL_OK) {
-		if(debugMode) printf("Flash Sector Write Error occurred.\r\n");
+		if(debugMode) printf("Flash Sector Write Error 6 occurred.\r\n");
 		HAL_FLASH_Lock();
 		simucubelog.addEventParam(flashWriteFailure,6);
 		return false;
 	}
 	address++;
 	if (HAL_FLASH_Program(TYPEPROGRAM_BYTE, address, firmwareVersion[buildVersionIdx]) != HAL_OK) {
-		if(debugMode) printf("Flash Sector Write Error occurred.\r\n");
+		if(debugMode) printf("Flash Sector Write Error 7 occurred.\r\n");
 		HAL_FLASH_Lock();
 		simucubelog.addEventParam(flashWriteFailure,7);
 		return false;
 	}
 	address++;
-	// then write hardware config
-	uint16_t size = sizeof(hwData);
-	uint8_t* pointer = mConfig.GetHardwareConfigAddr();
-	//volatile uint8_t* originalpointer = pointer;
-	for(int i=0; i<size; i++) {
-		uint8_t data = *pointer;
-		if (HAL_FLASH_Program(TYPEPROGRAM_BYTE, address, data) != HAL_OK) {
-			if(debugMode) printf("Flash Sector Write Error occurred.\r\n");
+
+	// for align
+	if(!fillFlashZeroes(address, 1)) {
+		if(debugMode) printf("Flash Sector Write Error 8 occurred.\r\n");
+		HAL_FLASH_Lock();
+		simucubelog.addEventParam(flashWriteFailure,8);
+		return false;
+	}
+	address++;
+	if(!fillFlashZeroes(address, HWSETTINGSADDRESS-address)) {
+		if(debugMode) printf("Flash Sector Write Error 9 occurred.\r\n");
+		HAL_FLASH_Lock();
+		simucubelog.addEventParam(flashWriteFailure,9);
+		return false;
+	}
+
+
+	address = HWSETTINGSADDRESS;
+	for(int i = 0; i< numberOfHwSettingsAddrs; i++) {
+		int32_t value = mConfig.hardwareConfig.hwSettings[i];
+		if(HAL_FLASH_Program(TYPEPROGRAM_WORD, address, value) != HAL_OK) {
+			if(debugMode) printf("Flash Sector Write Error 10 occurred.\r\n");
 			HAL_FLASH_Lock();
-			simucubelog.addEventParam(flashWriteFailure,8);
+			simucubelog.addEventParam(flashWriteFailure,10);
+			return false;
+		}
+		address+=4;
+	}
+	//bytestore
+	for(int i = 0; i<256; i++) {
+		uint8_t value = mConfig.hardwareConfig.bytestore[i];
+		if(HAL_FLASH_Program(TYPEPROGRAM_BYTE, address, value) != HAL_OK) {
+			HAL_FLASH_Lock();
+			if(debugMode) printf("Flash Sector Write Error 11 occurred.\r\n");
+			simucubelog.addEventParam(flashWriteFailure,11);
 			return false;
 		}
 		address++;
-		pointer++;
 	}
-	//then write analog axis config
-	size = sizeof(analogData);
-	pointer = mConfig.GetAnalogConfigAddr();
-	for(int i=0; i<size; i++) {
-		uint8_t data = *pointer;
-		if (HAL_FLASH_Program(TYPEPROGRAM_BYTE, address, data) != HAL_OK) {
-			if(debugMode) printf("Flash Sector Write Error occurred.\r\n");
+
+	if(!fillFlashZeroes(address, ANALOGSETTINGSADDRESS-address)) {
+		if(debugMode) printf("Flash Sector Write Error 12 occurred.\r\n");
+		HAL_FLASH_Lock();
+		simucubelog.addEventParam(flashWriteFailure,12);
+		return false;
+	}
+
+	address=ANALOGSETTINGSADDRESS;
+	// analog configs
+	for(int analogconf = 0; analogconf<maxnumanalogconfigs; analogconf++) {
+		for(int analogaxis = 0; analogaxis<7; analogaxis++) {
+			for(int analogsetting = 0; analogsetting<numberOfAnalogSettingsAddrs; analogsetting++) {
+				int32_t value = mConfig.analogConfig[analogconf].axises[analogaxis].settings[analogsetting];
+				if(HAL_FLASH_Program(TYPEPROGRAM_WORD, address, value) != HAL_OK) {
+					HAL_FLASH_Lock();
+					if(debugMode) printf("Flash Sector Write Error 13 occurred.\r\n");
+					simucubelog.addEventParam(flashWriteFailure,13);
+					return false;
+				}
+				address+=4;
+			}
+		}
+		for(int bytestoreint = 0; bytestoreint<32; bytestoreint++) {
+			uint8_t value = mConfig.analogConfig[analogconf].bytestore[bytestoreint];
+			if(HAL_FLASH_Program(TYPEPROGRAM_BYTE, address, value) != HAL_OK) {
+				HAL_FLASH_Lock();
+				if(debugMode) printf("Flash Sector Write Error 14 occurred.\r\n");
+				simucubelog.addEventParam(flashWriteFailure,14);
+				return false;
+			}
+			address++;
+		}
+	}
+
+	// buttons stuff is not used at all as the configs are stored in the wireless wheel
+	if(!fillFlashZeroes(address, BUTTONSSETTINGSADDRESS-address)) {
+		if(debugMode) printf("Flash Sector Write Error 15 occurred.\r\n");
+		HAL_FLASH_Lock();
+		simucubelog.addEventParam(flashWriteFailure,15);
+		return false;
+	}
+
+	address=BUTTONSSETTINGSADDRESS;
+	// buttton configs
+	for(int i = 0; i< numberofbuttonsettings; i++) {
+		int32_t value = mConfig.buttonConfig.settings[i];
+		if(HAL_FLASH_Program(TYPEPROGRAM_WORD, address, value) != HAL_OK) {
 			HAL_FLASH_Lock();
-			simucubelog.addEventParam(flashWriteFailure,9);
+			if(debugMode) printf("Flash Sector Write Error 16 occurred.\r\n");
+			simucubelog.addEventParam(flashWriteFailure,16);
 			return false;
 		}
-		address++;
-		pointer++;
+		address+=4;
 	}
+
+	if(!fillFlashZeroes(address, PROFILESETTINGSADDRESS-address)) {
+		if(debugMode) printf("Flash Sector Write Error 17 occurred.\r\n");
+		HAL_FLASH_Lock();
+		simucubelog.addEventParam(flashWriteFailure,17);
+		return false;
+	}
+
+	address = PROFILESETTINGSADDRESS;
 	//then write number of profiles number lobyte
 	uint8_t byte = numberofprofiles & 0xFF;
 	if (HAL_FLASH_Program(TYPEPROGRAM_BYTE, address, byte) != HAL_OK) {
-		if(debugMode) printf("Flash Sector Write Error occurred.\r\n");
+		if(debugMode) printf("Flash Sector Write Error 18 occurred.\r\n");
 		HAL_FLASH_Lock();
-		simucubelog.addEventParam(flashWriteFailure,10);
+		simucubelog.addEventParam(flashWriteFailure,18);
 		return false;
 	}
 	address++;
 	// hibyte
 	byte = (numberofprofiles >> 8) & 0xFF;
 	if (HAL_FLASH_Program(TYPEPROGRAM_BYTE, address, byte) != HAL_OK) {
-		if(debugMode) printf("Flash Sector Write Error occurred.\r\n");
+		if(debugMode) printf("Flash Sector Write Error 19 occurred.\r\n");
 		HAL_FLASH_Lock();
-		simucubelog.addEventParam(flashWriteFailure,11);
+		simucubelog.addEventParam(flashWriteFailure,19);
 		return false;
 	}
 	address++;
 	//then write default profile number lobyte
 	byte = defaultprofileindex & 0xFF;
 	if (HAL_FLASH_Program(TYPEPROGRAM_BYTE, address, byte) != HAL_OK) {
-		if(debugMode) printf("Flash Sector Write Error occurred.\r\n");
+		if(debugMode) printf("Flash Sector Write Error 20 occurred.\r\n");
 		HAL_FLASH_Lock();
-		simucubelog.addEventParam(flashWriteFailure,12);
+		simucubelog.addEventParam(flashWriteFailure,20);
 		return false;
 	}
 	address++;
 	// hibyte
 	byte = (defaultprofileindex >> 8) & 0xFF;
 	if (HAL_FLASH_Program(TYPEPROGRAM_BYTE, address, byte) != HAL_OK) {
-		if(debugMode) printf("Flash Sector Write Error occurred.\r\n");
+		if(debugMode) printf("Flash Sector Write Error 21 occurred.\r\n");
 		HAL_FLASH_Lock();
-		simucubelog.addEventParam(flashWriteFailure,13);
+		simucubelog.addEventParam(flashWriteFailure,21);
 		return false;
 	}
 	address++;
+
+
 	//then write profile configs
-#if 0
-	size = sizeof(profData);
 
-	for(int i = 0; i< maxnumprofiles; i++) {
-		pointer = mConfig.GetProfileConfigAddr(i);
-		for(int i=0; i<size; i++) {
-			uint8_t data = *pointer;
-			if (HAL_FLASH_Program(TYPEPROGRAM_BYTE, address, data) != HAL_OK) {
-				if(debugMode) printf("Flash Sector Write Error occurred.\r\n");
+	for(int profileidx = 0; profileidx<maxnumprofiles_v11; profileidx++) {
+		//addrs
+		for(int profileaddr=0; profileaddr<numberOfProfAddrs; profileaddr++) {
+			int32_t value = mConfig.profileConfigs[profileidx].settings[profileaddr];
+			if(HAL_FLASH_Program(TYPEPROGRAM_WORD, address, value) != HAL_OK) {
 				HAL_FLASH_Lock();
-				simucubelog.addEventParam(flashWriteFailure,14);
+				if(debugMode) printf("Flash Sector Write Error 22 occurred.\r\n");
+				simucubelog.addEventParam(flashWriteFailure,22);
+				return false;
+			}
+			address+=4;
+		}
+		//names
+		for(int namebyte=0; namebyte<32; namebyte++) {
+			uint8_t byte = mConfig.profileConfigs[profileidx].profilename[namebyte];
+			if (HAL_FLASH_Program(TYPEPROGRAM_BYTE, address, byte) != HAL_OK) {
+				if(debugMode) printf("Flash Sector Write Error 23 occurred.\r\n");
+				HAL_FLASH_Lock();
+				simucubelog.addEventParam(flashWriteFailure,23);
 				return false;
 			}
 			address++;
-			pointer++;
 		}
-	}
-#endif
-
-	// 2-page profiledatas. Split to maintain compatibility with data where there was only 55 bytes of
-	// configuration data.
-#if 1
-	size = sizeof(profData);
-	uint8_t startbyteindex=profileDataByteSplitIndex;
-
-	// 1st pages
-	for(int i = 0; i< maxnumprofiles; i++) {
-		pointer = mConfig.GetProfileConfigAddr(i);
-		for(int i=0; i<startbyteindex; i++) {
-			uint8_t data = *pointer;
-			if (HAL_FLASH_Program(TYPEPROGRAM_BYTE, address, data) != HAL_OK) {
-				if(debugMode) printf("Flash Sector Write Error occurred.\r\n");
+		//bytes
+		for(int storebyte=0; storebyte<32; storebyte++) {
+			uint8_t byte = mConfig.profileConfigs[profileidx].bytestore[storebyte];
+			if (HAL_FLASH_Program(TYPEPROGRAM_BYTE, address, byte) != HAL_OK) {
+				if(debugMode) printf("Flash Sector Write Error 24 occurred.\r\n");
 				HAL_FLASH_Lock();
+				simucubelog.addEventParam(flashWriteFailure,24);
 				return false;
 			}
 			address++;
-			pointer++;
 		}
 	}
 
-	//2nd pages
-	for(int i = 0; i< maxnumprofiles; i++) {
-		pointer = mConfig.GetProfileConfigAddr(i)+startbyteindex;
-		for(int i=startbyteindex; i<size; i++) {
-			uint8_t data = *pointer;
-			if (HAL_FLASH_Program(TYPEPROGRAM_BYTE, address, data) != HAL_OK) {
-				if(debugMode) printf("Flash Sector Write Error occurred.\r\n");
-				HAL_FLASH_Lock();
-				return false;
-			}
-			address++;
-			pointer++;
-		}
+	if(!fillFlashZeroes(address, SETTINGSENDADDRESS -4-address)) {
+		if(debugMode) printf("Flash Sector Write Error 25 occurred.\r\n");
+		HAL_FLASH_Lock();
+		simucubelog.addEventParam(flashWriteFailure,25);
+		return false;
 	}
 
-#endif
+	// save flash data crc value
+	uint32_t totalCRC = crc32a((uint8_t*)SETTINGSSTARTADDRESS, SETTINGSENDADDRESS - 4 - SETTINGSSTARTADDRESS);
+
+	if(debugMode) printf("saving %u\r\n", totalCRC);
+
+	uint32_t savedCRCaddr = SETTINGSENDADDRESS -4;
+	if(HAL_FLASH_Program(TYPEPROGRAM_WORD, savedCRCaddr, totalCRC) != HAL_OK) {
+		HAL_FLASH_Lock();
+		if(debugMode) printf("Flash Sector Write Error 26 occurred.\r\n");
+		simucubelog.addEventParam(flashWriteFailure,26);
+		return false;
+	}
 	HAL_FLASH_Lock();
 	return true;
 }
@@ -1108,71 +1314,92 @@ extern s32 encoderCounter;
 // changing mode, so that main() can know what to do
 // after completing a special operation / quick visit.
 bool cFFBDevice::handleSimuCUBEAPIcommand(uint8_t* data) {
-	//if(debugMode2) printf("processing SimuCUBE custom command: ");
 	int returnvalue = USBD_BUSY;
 	uint8_t command = data[1];
 	switch(command) {
-		case requestStatus:
+		case nopCommand:
 		{
-			//if(debugMode2)printf(" requeststatus\r\n");
-			// build reply. Increment pointer accordingly. Start from reply[1]
-			statusReplyPacket reply;
-			reply.majorVersion = firmwareVersion[majorVersionIdx];
-			reply.minorVersion = firmwareVersion[minorVersionIdx];
-			reply.buildVersion = firmwareVersion[buildVersionIdx];
-			reply.SimuCubeStatus = currentSystemStatus;
-			reply.previousCommandSuccess = 1;
-			reply.simucubeStatusBits |= (indexpointfound<<indexpointFoundBit);
-			reply.drcReceivedBytes = IoniDrcDataReceivedBytes;
-			reply.DriveFWUploadPercentage = firmwareuploadingstatuspercentage;
-			reply.DriveFWVersion = IoniFWVersion;
-			reply.hwVersion = scHWVersion;
-			reply.motorfaults = motorFaultRegister;
+			if(debugMode) printf("nopcommand\r\n");
+			break;
+		}
+		case requestStatus: //statusupdate
+		{
+			statusreply.reportID = inReport;
+			statusreply.command = replyStatus,
+			statusreply.majorVersion = firmwareVersion[majorVersionIdx];
+			statusreply.minorVersion = firmwareVersion[minorVersionIdx];
+			statusreply.buildVersion = firmwareVersion[buildVersionIdx];
+			statusreply.SimuCubeStatus = currentSystemStatus;
+			statusreply.drcReceivedBytes = IoniDrcDataReceivedBytes;
+			statusreply.DriveFWUploadPercentage = firmwareuploadingstatuspercentage;
+			statusreply.DriveFWVersion = IoniFWVersion;
+			statusreply.hwVersion = scHWVersion;
+			statusreply.motorfaults = motorFaultRegister;
 
-			reply.activeProfileIndex = currentprofileindex;
-			reply.defaultProfileIndex = defaultprofileindex;
-			reply.numberofprofiles = numberofprofiles;
+			statusreply.activeProfileIndex = currentprofileindex;
+			statusreply.defaultProfileIndex = defaultprofileindex;
+			statusreply.numberofprofiles = numberofprofiles;
 			// these are automatically calculated in torqueCommand generation. If not doing that
 			// and thus not updated, need to interpret that in the config software side?
-			reply.driveStatus = driveStatusBits;
-			//uint8_t* pointer = reinterpret_cast<uint8_t*>(reply);
+			statusreply.driveStatus = driveStatusBits;
 
-			reply.simucubeStatusBits |= (unsavedSettings<<unsavedSettingsBit);
+			statusreply.simucubeStatusBits  = 0;
+            statusreply.simucubeStatusBits2 = 0;
 
-			if(driveInitSuccess) reply.simucubeStatusBits |= (1<<initSuccessBit);
+			statusreply.simucubeStatusBits |= (unsavedSettings<<unsavedSettingsBit);
+			statusreply.simucubeStatusBits |= (_indexpointFound<<indexpointFoundBit);
+			statusreply.simucubeStatusBits |= (driveInitSuccessFlag<<initSuccessBit);
 
-			reply.motorFaultLocationID = faultLocationID;
-			reply.debugvalue1 = debugvalue1;
-			reply.debugvalue2 = overendstop;//globaldebugvalue2;
-			reply.logVerbosityMode = simucubelog.getVerbosity();
+			statusreply.simucubeStatusBits |= (forcesEnabled<<forcesEnabledBit);
+			statusreply.simucubeStatusBits |= (bledetected<<bleModuleFoundBit);
+			if(bledetected) {
+				bool bleconnstate = BLEConn.getConnectionState();
+				if(bleconnstate) {
+					statusreply.simucubeStatusBits |= (1<<bleWheelConnectedBit);
+				}
+				bool blescanstate = BLEConn.getScanStatus();
+				if(blescanstate) {
+					statusreply.simucubeStatusBits |= (1<<bleScanInProgressBit);
+				}
+			}
+			statusreply.simucubeStatusBits |= (wirelessTorqueOffEvent<<wirelessTorqueOffEventBit);
+			statusreply.simucubeStatusBits |= (wirelessTorqueOffButton<<wirelessTorqueOffButtonBit);
+			statusreply.simucubeStatusBits |= (STOStatus<<stoStatusBit);
+			statusreply.simucubeStatusBits |= (torqueFailed<<smPermanentFaultBit);
+			statusreply.simucubeStatusBits |= (torqueOffSavingDelay<<torqueOffSavingBit);
+			statusreply.simucubeStatusBits |= (temporarySteeringAngleIsSet<<temporarySteeringAngleBit);
+			statusreply.simucubeStatusBits |= (_swwIdleDisonnect<<bleAutoDisconnectedBit);
 
-			//updateEffectRegister();
-			reply.ffbEffectsInUse = ffbEffectUsage;
-			reply.ffbEffectsInActiveUse = ffbEffectActive;
-			reply.driveTypeID=DeviceTypeID;
+			if(endstop_effect.unsafe()) {
+                statusreply.simucubeStatusBits2 = 1; // bit 0
+            }
+
+			statusreply.motorFaultLocationID = faultLocationID;
+			statusreply.debugvalue1 = debugvalue1_;
+			statusreply.debugvalue2 = endstop_effect.direction();//globaldebugvalue2;
+			statusreply.logVerbosityMode = simucubelog.getVerbosity();
+
+			statusreply.ffbEffectsInUse = ffbEffectUsage;
+			statusreply.ffbEffectsInActiveUse = ffbEffectActive;
+			statusreply.driveTypeID=DeviceTypeID;
 
 			int counter = 0;
-			//if(debugMode2)printf("sending reply\r\n");
 			while (returnvalue != USBD_OK) {												   // remember to always send 61, otherwise microsoft hid discards it!
 				counter++;
-				returnvalue = USBD_CUSTOM_HID_SendReport( &hUsbDeviceFS, (uint8_t*)&reply, 61);//sizeof(statusReplyPacket));
-				if(returnvalue == USBD_BUSY) {if(debugMode2)printf(".");}
+				returnvalue = USBD_CUSTOM_HID_SendReport( &hUsbDeviceFS, (uint8_t*)&statusreply, 61);
+				if(returnvalue == USBD_BUSY) {
+					if(debugMode2)printf(".");
 
-				if(currentSystemStatus == Operational) {
-					//printf("!\r\n");
-					bool newCalculation = joystick.gFFBDevice.CalcTorqueCommand(&encoderCounter); //reads encoder counter too
-					if(newCalculation) {
-						joystick.gFFBDevice.calcSteeringAngle(encoderCounter);
+					if(currentSystemStatus == Operational) {
+						//printf("!\r\n");
+						if(!ServoDriveDisabled) {
+							CalcTorqueCommand(); //reads encoder counter too
+						}
 					}
 				}
 			}
-			if(debugMode) {
-				//if(counter>370) printf("%d\r\n", counter);
-			}
-			//if(debugMode2)printf("sent reply\r\n");
 			// this is important so that any next USBD_CUSTOM_HID_SendReport command won't get to overwrite the pointer. Also, this must be kept fast enough so that simplemotion won't reset.
 			start_timer2_15ms_delay();
-			//HAL_Delay(20);
 			return true;
 			break;
 		}
@@ -1187,25 +1414,26 @@ bool cFFBDevice::handleSimuCUBEAPIcommand(uint8_t* data) {
 
 			uint16_t ev;
 			int32_t param;
-			eventLogReplyPacket reply;
-			reply.latestEvent = simucubelog.lastEventIndex;
+
+			eventreply.reportID = inReport;
+			eventreply.command = replyEventLog;
+			eventreply.latestEvent = simucubelog.lastEventIndex;
 			for(int i=0;i<9;i++) {
 				if(offset+i > logSize-1) {
 					// log is at end.
 					break;
 				}
 				simucubelog.getEvent(offset+i, ev, param);//reply.events[i], reply.parameters[i]);
-				reply.events[i]=ev;
-				reply.parameters[i]=param;
+				eventreply.events[i]=ev;
+				eventreply.parameters[i]=param;
 			}
 			while (returnvalue != USBD_OK) {												   // remember to always send 61, otherwise microsoft hid discards it!
-				returnvalue = USBD_CUSTOM_HID_SendReport( &hUsbDeviceFS, (uint8_t*)&reply, 61);//sizeof(statusReplyPacket));
+				returnvalue = USBD_CUSTOM_HID_SendReport( &hUsbDeviceFS, (uint8_t*)&eventreply, 61);//sizeof(statusReplyPacket));
 				if(returnvalue == USBD_BUSY) {if(debugMode2)printf(".");}
 
 				if(currentSystemStatus == Operational) {
-					bool newCalculation = joystick.gFFBDevice.CalcTorqueCommand(&encoderCounter); //reads encoder counter too
-					if(newCalculation) {
-						joystick.gFFBDevice.calcSteeringAngle(encoderCounter);
+					if(!ServoDriveDisabled) {
+						CalcTorqueCommand(); //reads encoder counter too
 					}
 				}
 			}
@@ -1215,18 +1443,22 @@ bool cFFBDevice::handleSimuCUBEAPIcommand(uint8_t* data) {
 		}
 
 		case startEventLogging:
+		{
 			if(debugMode) printf(" startlogging\r\n");
 			simucubelog.addEvent(Command_startLogging);
 			simucubelog.setEnabled();
 			return true;
 			break;
+		}
 
 		case stopEventLogging:
+		{
 			if(debugMode) printf(" stoplogging\r\n");
 			simucubelog.addEvent(Command_stopLogging);
 			simucubelog.setDisabled();
 			return true;
 			break;
+		}
 
 		case setEventLogVerbosity:
 		{
@@ -1250,12 +1482,15 @@ bool cFFBDevice::handleSimuCUBEAPIcommand(uint8_t* data) {
 		}
 
 		case startIRFFBMode:
+		{
 			simucubelog.addEvent(Command_startIRFFBmode);
 			IRFFBModeEnabled = true;
 			return true;
 			break;
+		}
 
 		case stopIRFFBMode:
+		{
 			IRFFBModeEnabled = false;
 			latestIRFFBForce[0] = 0;
 			latestIRFFBForce[1] = 0;
@@ -1266,6 +1501,7 @@ bool cFFBDevice::handleSimuCUBEAPIcommand(uint8_t* data) {
 			simucubelog.addEvent(Command_stopIRFFBmode);
 			return true;
 			break;
+		}
 
 		case reloadFromFlash:
 		{
@@ -1284,238 +1520,24 @@ bool cFFBDevice::handleSimuCUBEAPIcommand(uint8_t* data) {
 				unsavedSettings = 0;
 				return false;
 			}
-			// else, was in some config or fault mode, and that doesn't need to be changed.
+			// else, was in some configuration / idle mode, or fault mode, and that doesn't need to be changed.
 			unsavedSettings = 0;
 			return true;
 			break;
 		}
 
 		case unsetSettingsChanged:
+		{
 			if(debugMode) printf(" unsetsettingschanged\r\n");
 			simucubelog.addEvent(Command_unsetSettingChanged);
 			unsavedSettings = 0;
 			return true;
 			break;
-
-		case requestProfileConfig:
-		{
-
-			commandPacket* packet = (commandPacket*) data;
-			uint16_t profileindex = packet->value;
-			uint8_t profilePage = packet->value2;
-
-			profileConfigReplyPacket reply;
-#if 0
-			memcpy(reply.data, mConfig.GetProfileConfigAddr(profileindex), sizeof(cProfileConfig));
-#endif
-#if 1
-			uint8_t* source;
-			if(profileindex>(numberofprofiles-1)) {
-				source = mConfig.GetProfileConfigAddr(0)+profilePage*profileDataByteSplitIndex;
-			} else {
-				source = mConfig.GetProfileConfigAddr(profileindex)+profilePage*profileDataByteSplitIndex;
-			}
-			int8_t* target = reply.data;
-			// count number of valid bytes
-			uint16_t profdatasize = sizeof(profData);
-			uint8_t validbytes;
-			uint16_t fulldata = profileDataByteSplitIndex*(profilePage+1);
-			if(fulldata>profdatasize) {
-				validbytes = fulldata-profdatasize;
-			} else {
-				validbytes=profileDataByteSplitIndex;
-			}
-			memcpy(target, source, validbytes);
-#endif
-			if(debugMode) printf("requestprofile %dp%d\r\n", profileindex, profilePage);
-			simucubelog.addEventParam(Command_requestProfile, profileindex);
-			simucubelog.addEventParam(Command_requestProfilepage, profilePage);
-			if(debugMode2)printf("sending reply\r\n");
-			while (returnvalue != USBD_OK) {
-				returnvalue = USBD_CUSTOM_HID_SendReport( &hUsbDeviceFS, (uint8_t*)&reply, 61);
-				if(returnvalue == USBD_BUSY) {if(debugMode2)printf(".");}
-			}
-			if(debugMode)printf(" sent reply\r\n");
-			// this is important so that any next USBD_CUSTOM_HID_SendReport command won't get to overwrite the pointer. Also, this must be kept fast enough so that simplemotion won't reset.
-			start_timer2_15ms_delay();
-			//HAL_Delay(20);
-			return true;
-			break;
 		}
-
-		case requestHardwareConfig:
-		{
-			if(debugMode) printf("requesthardware\r\n");
-			simucubelog.addEvent(Command_requestHardware);
-			hardwareConfigReplyPacket reply;
-			memcpy(reply.data, mConfig.GetHardwareConfigAddr(), sizeof(cHardwareConfig));
-			printf("cpr: %ld\r\n", mConfig.hardwareConfig.mEncoderCPR);
-			if(debugMode2)printf("sending reply\r\n");
-			while (returnvalue != USBD_OK) {
-				returnvalue = USBD_CUSTOM_HID_SendReport( &hUsbDeviceFS, (uint8_t*)&reply, 61);
-				if(returnvalue == USBD_BUSY) {if(debugMode2)printf("-");}
-			}
-			if(debugMode)printf(" sent reply\r\n");
-			// this is important so that any next USBD_CUSTOM_HID_SendReport command won't get to overwrite the pointer. Also, this must be kept fast enough so that simplemotion won't reset.
-			start_timer2_15ms_delay();
-			//HAL_Delay(20);
-			return true;
-			break;
-		}
-
-		case requestAnalogConfig:
-		{
-			if(debugMode) printf("requestanalog\r\n");
-			simucubelog.addEvent(Command_requestAnalog);
-			analogConfigReplyPacket reply;
-			memcpy(reply.data, mConfig.GetAnalogConfigAddr(), sizeof(cAnalogConfig));
-			if(debugMode)printf("sending reply\r\n");
-			while (returnvalue != USBD_OK) {
-				returnvalue = USBD_CUSTOM_HID_SendReport( &hUsbDeviceFS, (uint8_t*)&reply, 61);
-				if(returnvalue != USBD_OK) {if(debugMode2)printf("/");}
-			}
-			if(debugMode2)printf(" sent reply\r\n");
-			// this is important so that any next USBD_CUSTOM_HID_SendReport command won't get to overwrite the pointer. Also, this must be kept fast enough so that simplemotion won't reset.
-			start_timer2_15ms_delay();
-			//HAL_Delay(20);
-			return true;
-			break;
-		}
-
-		case requestIoniConfig:
-		{
-			if(debugMode) printf(" requestioniconfig\r\n");
-			simucubelog.addEvent(Command_requestIoniData);
-			ioniConfigRequestPacket* request = (ioniConfigRequestPacket*) data;
-			ioniConfigReplyPacket reply;
-			// 1) parse needed parameters
-			// 2) request them from Ioni
-
-			reply.numberOfValues=request->numberOfValues;
-
-			for (int i=0; i<request->numberOfValues; i++) {
-				reply.parameters[i]=request->parameters[i];
-				smRead1Parameter(mSMBusHandle, 1, request->parameters[i], &reply.values[i]);
-			}
-
-			// 3) send them over USB
-			if(debugMode)printf("sending reply\r\n");
-			while (returnvalue != USBD_OK) {
-				returnvalue = USBD_CUSTOM_HID_SendReport( &hUsbDeviceFS, (uint8_t*)&reply, sizeof(ioniConfigReplyPacket));
-				if(returnvalue == USBD_BUSY) {if(debugMode2)printf("_");}
-			}
-			if(debugMode)printf("sent reply\r\n");
-			// this is important so that any next USBD_CUSTOM_HID_SendReport command won't get to overwrite the pointer. Also, this must be kept fast enough so that simplemotion won't reset.
-			start_timer2_15ms_delay();
-			//HAL_Delay(20);
-			return true;
-			break;
-		}
-
-
-		case setHardwareConfig:
-		{
-			if(debugMode) printf("sethardware\r\n");
-			simucubelog.addEvent(Command_setHardware);
-			//if(debugMode) printf("endstopdampergain %d\r\n", mConfig.hardwareConfig.mStopsDamperGain);
-			setConfigPacket* packet = (setConfigPacket*) data;
-			memcpy(mConfig.GetHardwareConfigAddr(), &packet->data[0], sizeof(hwData));
-			//if(debugMode) printf("endstopdampergain %d\r\n ", mConfig.hardwareConfig.mStopsDamperGain);
-
-			// set beeps according to mode
-			s32 parametervalue;
-			smRead1Parameter(mSMBusHandle, 1, SMP_DRIVE_FLAGS, &parametervalue);
-			if(mConfig.hardwareConfig.audibleNotificationsEnabled == 1) {
-				parametervalue = parametervalue | FLAG_ENABLE_MOTOR_SOUND_NOTIFICATIONS;
-			} else {
-				parametervalue = parametervalue & ~FLAG_ENABLE_MOTOR_SOUND_NOTIFICATIONS;
-			}
-			smSetParameter(mSMBusHandle, 1, SMP_DRIVE_FLAGS, parametervalue);
-
-			if(currentSystemStatus==Operational) {
-				currentSystemStatus = BeforeOperational;
-			}
-			unsavedSettings = 1;
-			return false;
-			break;
-		}
-
-		case setProfileConfig:
-		{
-			setConfigPacket* packet = (setConfigPacket*) data;
-			uint16_t profileidx = packet->opt_number;
-			uint8_t profilePage = packet->opt_page;
-			if(debugMode) printf("setprofile %dp%d\r\n", profileidx, profilePage);
-			simucubelog.addEventParam(Command_setProfile, profileidx);
-			simucubelog.addEventParam(Command_SetProfilePage, profilePage);
-			if(profileidx==0) {
-				// do not overwrite the 0 profile
-				return false;
-				break;
-			}
-#if 0
-			memcpy(mConfig.GetProfileConfigAddr(profileidx), &packet->data[0], sizeof(profData));
-#endif
-#if 1
-			uint8_t* target = mConfig.GetProfileConfigAddr(profileidx)+profilePage*profileDataByteSplitIndex;
-			uint8_t* source = &packet->data[0];
-			// count number of valid bytes
-			uint16_t profdatasize = sizeof(profData);
-			uint8_t validbytes;
-			uint16_t fulldata = profileDataByteSplitIndex*(profilePage+1);
-			if(fulldata>profdatasize) {
-				validbytes = fulldata-profdatasize;
-			} else {
-				validbytes=profileDataByteSplitIndex;
-			}
-			memcpy(target, source, validbytes);
-#endif
-			if (profileidx != currentprofileindex) {
-				unsavedSettings = 1;
-				return true;
-				break;
-			}
-			setCurrentProfileMMC();
-			currentSystemStatus = BeforeOperational; // on current profile config change, need to init at least steering angles again.
-			temporarySteeringAngleIsSet = false;
-			unsavedSettings = 1;
-			return false;
-			break;
-		}
-
-		// THIS WORKS
-		case setAnalogConfig:
-		{
-			if(debugMode) printf("setanalog\r\n");
-			simucubelog.addEvent(Command_setAnalog);
-			setConfigPacket* packet = (setConfigPacket*) data;
-			memcpy(mConfig.GetAnalogConfigAddr(),&packet->data[0], sizeof(analogData));
-			//currentSystemStatus = DriveInit; // on profile config change, need to init at least steering angles again.
-			// so go to BeforeOperational.
-			//currentSystemStatus = BeforeOperational;
-			//mConfig.analogConfig
-			unsavedSettings = 1;
-			return true;
-			break;
-		}
-
-		case setIoniConfig:
-		{
-			if(debugMode) printf("setIoniConfig\r\n");
-			simucubelog.addEvent(Command_setIoniConfig);
-			setIoniConfigPacket* packet = (setIoniConfigPacket*) data;
-			for(int i=0; i<packet->numberOfValues; i++) {
-				smSetParameter(mSMBusHandle, 1, packet->parameters[i], packet->values[i]);
-			}
-			//todo: check if drive restart is needed!
-			return false;
-			break;
-		}
-
 
 		case transferIoniDrcData:
 		{
-			if(debugMode) printf("ionidrcdata");
+			if(debugMode) printf(" ionidrcdata");
 
 			transferIoniDrcDataPacket* packet = (transferIoniDrcDataPacket*) data;
 			simucubelog.addEventParam(294, IoniDrcDataReceivedBytes, true);
@@ -1533,11 +1555,11 @@ bool cFFBDevice::handleSimuCUBEAPIcommand(uint8_t* data) {
 
 		case applyIoniDrcData:
 		{
-			if(debugMode) printf("applyionidrcdata\r\n");
+			if(debugMode) printf(" applyionidrcdata\r\n");
 			simucubelog.addEvent(Command_ApplyIoniConfig);
 			if(firmwareuploadinprogress) {
 				simucubelog.addEventParam(Command_ApplyIoniConfigFail,0);
-				if(debugMode2) printf("ioni firmware upgrading!! can't do this.\r\n");
+				if(debugMode2) printf(" ioni firmware upgrading!! can't do this.\r\n");
 				return true;
 				break;
 			}
@@ -1556,96 +1578,405 @@ bool cFFBDevice::handleSimuCUBEAPIcommand(uint8_t* data) {
 				return false;
 				break;
 			}
-
+			return true;
+			break;
 		}
-		case freshStart:
-			if(debugMode) printf("freshstart\r\n");
-			simucubelog.addEvent(Command_goFreshStart);
-			currentSystemStatus = goFreshStart;
+
+
+		case sethwdata:
+		{
+			if(debugMode) printf(" set hw data\r\n");
+			simucubelog.addEvent(Command_setHardware);
+			setSettingsDataPacket* packet = (setSettingsDataPacket*)data;
+			bool settings = true;
+			bool driveSettings1Changed = false;
+			for(uint8_t i=0; i<9; i++) {
+				if((packet->addrs[i]==0) || (packet->addrs[i]>(numberOfHwSettingsAddrs-1))) {
+					if(i==0) {
+						settings=false;
+					}
+					break;
+				}
+				mConfig.hardwareConfig.hwSettings[packet->addrs[i]]=packet->values[i];
+
+				int addr = packet->addrs[i];
+				if(addr == addrVariousSettingsBits1) driveSettings1Changed=true;
+			}
+			if(!settings) {
+				// no settings at all in the packet??
+				return true;
+				break;
+			}
+			if(driveSettings1Changed) {
+				// set beeps according to mode
+				s32 parametervalue;
+				smRead1Parameter(mSMBusHandle, 1, SMP_DRIVE_FLAGS, &parametervalue);
+				if(mConfig.hardwareConfig.hwSettings[addrVariousSettingsBits1]&(1<<bitAudibleNotificationsEna)) {
+					parametervalue = parametervalue | FLAG_ENABLE_MOTOR_SOUND_NOTIFICATIONS;
+				} else {
+					parametervalue = parametervalue & ~FLAG_ENABLE_MOTOR_SOUND_NOTIFICATIONS;
+				}
+				if(debugMode) printf("set hardware parameters: audible beeb flag in SMP_DRIVE_FLAGS %lu to drive\r\n", parametervalue);
+				smSetParameter(mSMBusHandle, 1, SMP_DRIVE_FLAGS, parametervalue);
+			}
+
+			if(currentSystemStatus==Operational) {
+				currentSystemStatus = BeforeOperational;
+			} else {
+				initVariables(); // was not in operational mode, so just init variables separately
+			}
+			unsavedSettings=1;
+			return false;
+			break;
+		}
+
+		case setanalogdata:
+		{
+			if(debugMode) printf(" set analog data\r\n");
+			setSettingsDataPacket* packet = (setSettingsDataPacket*)data;
+			uint8_t configIndex=packet->value1;
+			simucubelog.addEventParam(Command_setAnalog, configIndex);
+			if(configIndex>maxnumanalogconfigs-1) {
+				configIndex=0;
+				break;
+			}
+			uint8_t axisIndex = packet->value2;
+			if(axisIndex>7) {
+				axisIndex=0;
+				break;
+			}
+			for(uint8_t i = 0; i<9; i++){
+				if((packet->addrs[i]==0) || (packet->addrs[i]>(numberOfAnalogSettingsAddrs-1))) {
+					break;
+				}
+				mConfig.analogConfig[configIndex].axises[axisIndex].settings[packet->addrs[i]]=packet->values[i];
+			}
+
+			unsavedSettings=1;
+			return true;
+			break;
+		}
+
+
+		case setprofiledata:
+		{
+			setSettingsDataPacket* packet = (setSettingsDataPacket*)data;
+			uint8_t profileidx = packet->value1;
+			if(debugMode) printf(" setprofile %d\r\n", profileidx);
+			simucubelog.addEventParam(Command_setProfile, profileidx);
+			if(profileidx==0) {
+				// do not overwrite the 0 profile
+				return false;
+				break;
+			}
+			bool settings = true;
+			for(uint8_t i = 0; i<9; i++) {
+				if((packet->addrs[i]==0) || (packet->addrs[i]>(numberOfProfAddrs-1))) {
+					if(i==0) {
+						settings=false;
+					}
+					break;
+				}
+				mConfig.profileConfigs[profileidx].settings[packet->addrs[i]]=packet->values[i];
+			}
+			if(!settings) {
+				return true; // no settings at all?
+				break;
+			}
+			unsavedSettings = 1;
+			if (profileidx != currentprofileindex) {
+				return true;
+				break;
+			}
+			/* was in current profile, must do the beforeOperational stuff
+			 * but only if the state is such that the beforeOperational is not run anyway
+			 * by state machine progression (drive init->setbaudrate->beforeoperational->operational).
+			 * The beforeOperational state is always run before going to operational.
+			 */
+			if(currentSystemStatus==Operational) {
+				currentSystemStatus = BeforeOperational;
+				return false; // return false to indicate that state change is upcoming
+			} else {
+				initVariables(); // was not in operational mode, so just init variables separately
+				return true;
+			}
+			break;
+		}
+		case setprofilename:
+		{
+			ProfileNameReplyPacket* packet = (ProfileNameReplyPacket*) data;
+			if(debugMode) printf(" set profile %d name\r\n", packet->value1);
+			uint16_t profileidx = packet->value1;
+			simucubelog.addEventParam(Command_setProfileName, profileidx);
+			if(profileidx==0) {
+				return true;
+				break;
+			}
+			for(uint8_t i =0; i<32; i++) {
+				mConfig.profileConfigs[profileidx].profilename[i]=packet->bytes[i];
+			}
+			unsavedSettings = 1;
+			return true;
+			break;
+		}
+		case setanalogbytedata:
+		{
+			ProfileNameReplyPacket* packet = (ProfileNameReplyPacket*) data;
+			if(debugMode) printf(" set analog bytedata for set %d\r\n", packet->value1);
+			uint16_t idx = packet->value1;
+			simucubelog.addEventParam(Command_setAnalogByteData, idx);
+			for(uint8_t i =0; i<32; i++) {
+				mConfig.analogConfig[idx].bytestore[i]=packet->bytes[i];
+			}
+			unsavedSettings = 1;
+			return true;
+			break;
+		}
+		case setprofilebytedata:
+		{
+			if(debugMode) printf(" set profile bytedata\r\n");
+			ProfileNameReplyPacket* packet = (ProfileNameReplyPacket*) data;
+			uint16_t profileidx = packet->value1;
+			simucubelog.addEventParam(Command_setProfileBytedata, profileidx);
+			if(profileidx==0) {
+				return true;
+				break;
+			}
+			for(uint8_t i =0; i<32; i++) {
+				mConfig.profileConfigs[profileidx].bytestore[i]=packet->bytes[i];
+			}
+			unsavedSettings = 1;
+			return true;
+			break;
+		}
+		case requesthwdata:
+		{
+			if(debugMode) printf(" request hw data\r\n");
+			simucubelog.addEvent(Command_requestHardware);
+			requestSettingsDataPacket* packet = (requestSettingsDataPacket*) data;
+			settingsdatareply.reportID = inReport;
+			settingsdatareply.command = datareplypacketid;
+			for(uint8_t i = 0; i<9; i++) {
+				if (packet->addrs[i]==0) {
+					settingsdatareply.addrs[i]=0;
+					continue;
+				}
+				settingsdatareply.addrs[i] = packet->addrs[i];
+				settingsdatareply.values[i]= mConfig.hardwareConfig.hwSettings[packet->addrs[i]];
+			}
+			while (returnvalue != USBD_OK) {
+				returnvalue = USBD_CUSTOM_HID_SendReport( &hUsbDeviceFS, (uint8_t*)&settingsdatareply, 61);
+				if(returnvalue == USBD_BUSY) {if(debugMode2)printf(".");}
+			}
+			return true;
+			break;
+		}
+		case requestanalogdata:
+		{
+			simucubelog.addEvent(Command_requestAnalog);
+			requestSettingsDataPacket* packet = (requestSettingsDataPacket*) data;
+			settingsdatareply.reportID = inReport;
+			settingsdatareply.command = datareplypacketid;
+			for(uint8_t i = 0; i<9; i++) {
+				if (packet->addrs[i]==0) {
+					settingsdatareply.addrs[i]=0;
+					continue;
+				}
+				settingsdatareply.addrs[i] = packet->addrs[i];
+				settingsdatareply.values[i]= mConfig.analogConfig[packet->value1].axises[packet->value2].settings[packet->addrs[i]];
+			}
+			while (returnvalue != USBD_OK) {
+				returnvalue = USBD_CUSTOM_HID_SendReport( &hUsbDeviceFS, (uint8_t*)&settingsdatareply, 61);
+				if(returnvalue == USBD_BUSY) {if(debugMode2)printf(".");}
+			}
 			return true;
 			break;
 
+		}
+		case requestprofiledata:
+		{
+			requestSettingsDataPacket* packet = (requestSettingsDataPacket*) data;
+			settingsdatareply.reportID = inReport;
+			settingsdatareply.command = datareplypacketid;
+			if(debugMode) printf(" request profile data %d\r\n", packet->value1);
+			simucubelog.addEventParam(Command_requestProfile, packet->value1);
+			for(uint8_t i = 0; i<9; i++) {
+				if (packet->addrs[i]==0) {
+					settingsdatareply.addrs[i]=0;
+					continue;
+				}
+				settingsdatareply.addrs[i] = packet->addrs[i];
+				settingsdatareply.values[i]= mConfig.profileConfigs[packet->value1].settings[packet->addrs[i]];
+			}
+			while (returnvalue != USBD_OK) {
+				returnvalue = USBD_CUSTOM_HID_SendReport( &hUsbDeviceFS, (uint8_t*)&settingsdatareply, 61);
+				if(returnvalue == USBD_BUSY) {if(debugMode2)printf(".");}
+			}
+			return true;
+			break;
+		}
+		case requestprofilename:
+		{
+			commandPacket* packet = (commandPacket*) data;
+			namereply.reportID = inReport;
+			namereply.command = bytedatareplypacketid;
+			if(debugMode) printf(" request profile name %u\r\n", packet->value);
+			simucubelog.addEventParam(Command_requestProfileName, packet->value);
+			for(uint8_t i = 0; i<32; i++) {
+				namereply.bytes[i]=mConfig.profileConfigs[packet->value].profilename[i];
+			}
+
+			while (returnvalue != USBD_OK) {
+				returnvalue = USBD_CUSTOM_HID_SendReport( &hUsbDeviceFS, (uint8_t*)&namereply, 61);
+				if(returnvalue == USBD_BUSY) {if(debugMode2)printf(".");}
+			}
+			return true;
+			break;
+		}
+		case requestanalogbytedata:
+		{
+			commandPacket* packet = (commandPacket*) data;
+			namereply.reportID = inReport;
+			namereply.command = bytedatareplypacketid;
+			if(debugMode) printf(" request analog byte data %u\r\n", packet->value);
+			simucubelog.addEventParam(Command_requestAnalogByteData, packet->value);
+			for(uint8_t i = 0; i<32; i++) {
+				namereply.bytes[i]=mConfig.analogConfig[packet->value].bytestore[i];
+			}
+
+			while (returnvalue != USBD_OK) {
+				returnvalue = USBD_CUSTOM_HID_SendReport( &hUsbDeviceFS, (uint8_t*)&namereply, 61);
+				if(returnvalue == USBD_BUSY) {if(debugMode2)printf(".");}
+			}
+			return true;
+			break;
+		}
+		case requestprofilebytedata:
+		{
+			commandPacket* packet = (commandPacket*) data;
+
+			bytedatareply.reportID = inReport;
+			bytedatareply.command = bytedatareplypacketid;
+			if(debugMode) printf(" request profile name %u\r\n", packet->value);
+			simucubelog.addEventParam(Command_requestProfileByteData, packet->value);
+			for(uint8_t i = 0; i<32; i++) {
+				bytedatareply.bytes[i]=mConfig.profileConfigs[packet->value].bytestore[i];
+			}
+
+			while (returnvalue != USBD_OK) {
+				returnvalue = USBD_CUSTOM_HID_SendReport( &hUsbDeviceFS, (uint8_t*)&bytedatareply, 61);
+				if(returnvalue == USBD_BUSY) {if(debugMode2)printf(".");}
+			}
+			return true;
+			break;
+		}
+		case freshStart:
+		{
+			if(debugMode) printf(" freshstart\r\n");
+			simucubelog.addEvent(Command_goFreshStart);
+			currentSystemStatus = goFreshStart;
+			return false;
+			break;
+		}
 		case enableSMUSB:
-			if(debugMode) printf("enablesmusb\r\n");
+		{
+			if(debugMode) printf(" enablesmusb\r\n");
 			simucubelog.addEvent(Command_enableSMUSB);
 			// set wheel forces to off!
-			SetTorque(0);
+			if(currentSystemStatus==Operational) {
+				SetTorque(0, 0);
+			}
 			nextSystemStatus = currentSystemStatus;
 			currentSystemStatus = releaseSMBus;
 			return false;
 			break;
-
+		}
 		case disableSMUSB:
-			if(debugMode) printf("disablesmusb\r\n");
-			simucubelog.addEvent(Command_disableSMUSB);
-			currentSystemStatus = regainSMBus;
-			return false;
+		{
+			if(debugMode) printf(" disablesmusb\r\n");
+			if(_smReleased) {
+				simucubelog.addEventParam(Command_disableSMUSB, 1);
+				currentSystemStatus = regainSMBus;
+				return false;
+			} else {
+				if(debugMode) printf(" not already released smbus, so do nothing.\r\n");
+				simucubelog.addEventParam(Command_disableSMUSB, 0);
+				return true;
+			}
 			break;
-
+		}
 		case requestRawAnalogAxis:
-			if(debugMode) printf("requestrawanalog\r\n");
+		{
+			if(debugMode) printf(" requestrawanalog\r\n");
 			simucubelog.addEvent(Command_setRawAnalogMode);
 			rawAnalogMode = true;
 			return true;
 			break;
-
+		}
 		case requestCalibratedAnalogAxis:
-			if(debugMode) printf("requestcalibratedanalog\r\n");
+		{
+			if(debugMode) printf(" requestcalibratedanalog\r\n");
 			simucubelog.addEvent(Command_setCalibAnalogMode);
 			rawAnalogMode = false;
 			return true;
 			break;
-
+		}
 		case startDriveInit:
-			if(debugMode) printf("Going to init drive!\r\n");
+		{
+			if(debugMode) printf(" Going to init drive!\r\n");
 			simucubelog.addEvent(Command_startDriveInit);
-			driveInitSuccess=false;
+			driveInitSuccessFlag=0;
+			forceFirsttimeDriveInit=1; // commanded init from motor config wizard
+
 			currentSystemStatus = DriveInit;
 			return false;
 			break;
-
+		}
 		case restartDrive:
-			if(debugMode) printf("restart drive command!\r\n");
+		{
+			if(debugMode) printf(" restart drive command!\r\n");
 			simucubelog.addEvent(Command_restartDrive);
-			smSetParameter(mSMBusHandle, 1, SMP_SYSTEM_CONTROL, SMP_SYSTEM_CONTROL_RESTART);
-			HAL_Delay(500);
-			currentSystemStatus = SystemNotConfigured;
-			return false;
-			break;
-
-		case setInitialConfigDone:
-			if(debugMode) printf("setting initial config to done!\r\n");
-			simucubelog.addEvent(Command_setInitialConfig);
-			mConfig.hardwareConfig.mInitialConfigDone = InitialConfigDone;
-			if(currentSystemStatus == DriveInitSuccessPause) {
-				currentSystemStatus = BeforeOperational;
-				return false;
-			} else {
+			commandPacket* packet = (commandPacket*) data;
+			uint16_t staystate = packet->value;
+			if(staystate==107) {
+				restartSMDrive();
 				return true;
+				break;
 			}
-			break;
-
-		case clearInitialConfigDone:
-			if(debugMode) printf("clearing initial config, going to notconfigured mode!\r\n");
-			simucubelog.addEvent(Command_unsetInitialConfig);
-			mConfig.hardwareConfig.mInitialConfigDone = InitialConfigNotDone;
+			restartSMDrive();
 			currentSystemStatus = SystemNotConfigured;
-			nextSystemStatus = SystemNotConfigured;
-			temporaryCenterPoint = false;
-			indexpointfound = 0;
 			return false;
 			break;
-#if 0
-		case connectDriveCommand:
-			if(debugMode) printf("Only connecting drive right now\r\n");
-			nextSystemStatus = currentSystemStatus;
-			currentSystemStatus = Driveconnect;
+		}
+		case setInitialConfigDone:
+		{
+			if(debugMode) printf(" setting initial config to done!\r\n");
+			simucubelog.addEvent(Command_setInitialConfig);
+			mConfig.hardwareConfig.hwSettings[addrVariousSettingsBits1]|=(1<<bitInitialConfigDone);
+			if(currentSystemStatus == DriveInitSuccessPause) {
+				currentSystemStatus = SetBaudrateForOperational;
+				return false;
+				break;
+			}
 			return true;
 			break;
-#endif
+		}
+		case clearInitialConfigDone:
+		{
+			if(debugMode) printf(" clearing initial config, going to notconfigured mode!\r\n");
+			simucubelog.addEvent(Command_unsetInitialConfig);
+			mConfig.hardwareConfig.hwSettings[addrVariousSettingsBits1]&=~(1<<bitInitialConfigDone);
+			currentSystemStatus = SystemNotConfigured;
+			nextSystemStatus = SystemNotConfigured;
+			initSMBusBaudrate(false);
+			temporaryCenterPoint = false;
+			_indexpointFound = 0;
+			return false;
+			break;
+		}
 		case setWheelCenterHere:
 		{
-			if(debugMode) printf("setwheelcenterhere\r\n");
+			if(debugMode) printf(" setwheelcenterhere\r\n");
 			simucubelog.addEvent(Command_setWheelCenter);
 			setWheelCenter();
 			return true;
@@ -1653,24 +1984,26 @@ bool cFFBDevice::handleSimuCUBEAPIcommand(uint8_t* data) {
 		}
 
 		case setTemporaryCenterMode:
-			if(debugMode) printf("setting temporary centering for this session\r\n");
+		{
+			if(debugMode) printf(" setting temporary centering for this session\r\n");
 			simucubelog.addEvent(Command_setTempCenter);
 			temporaryCenterPoint = true;
 			return true;
 			break;
-
+		}
 		case unsetTemporaryCenterMode:
-			if(debugMode) printf("unsetting temporary centering for this session\r\n");
+		{
+			if(debugMode) printf(" unsetting temporary centering for this session\r\n");
 			simucubelog.addEvent(Command_unsetTempCenter);
 			temporaryCenterPoint = false;
 			return true;
 			break;
-
+		}
 		case activateProfile:
 		{
 			commandPacket* packet = (commandPacket*) data;
 			currentprofileindex = packet->value;
-			if(debugMode) printf("activating profile index %u\r\n", currentprofileindex);
+			if(debugMode) printf(" activating profile index %u\r\n", currentprofileindex);
 			simucubelog.addEventParam(Command_actProfile,currentprofileindex);
 			temporarySteeringAngleIsSet = false;
 			if(currentSystemStatus==Operational) {
@@ -1679,7 +2012,6 @@ bool cFFBDevice::handleSimuCUBEAPIcommand(uint8_t* data) {
 			return false;
 			break;
 		}
-
 		case setNumProfiles:
 		{
 			commandPacket* packet = (commandPacket*) data;
@@ -1690,14 +2022,12 @@ bool cFFBDevice::handleSimuCUBEAPIcommand(uint8_t* data) {
 			} else {
 				numberofprofiles = packet->value;
 			}
-			if(debugMode) printf("setting number of profiles to %u\r\n", numberofprofiles);
+			if(debugMode) printf(" setting number of profiles to %u\r\n", numberofprofiles);
 			simucubelog.addEventParam(Command_setNumProfiles,numberofprofiles);
 			unsavedSettings = 1;
 			return true;
 			break;
-
 		}
-
 		case setDefaultProfile:
 		{
 			commandPacket* packet = (commandPacket*) data;
@@ -1707,84 +2037,76 @@ bool cFFBDevice::handleSimuCUBEAPIcommand(uint8_t* data) {
 			} else {
 				defaultprofileindex = packet->value;
 			}
-			if(debugMode) printf("setting default profile index to %u\r\n", defaultprofileindex);
+			if(debugMode) printf(" setting default profile index to %u\r\n", defaultprofileindex);
 			simucubelog.addEventParam(Command_setDefProfile,defaultprofileindex);
 			unsavedSettings = 1;
 			return true;
 			break;
 		}
-
-
-
-
-		case readIoniFiltersToProfile:
-			if(debugMode) printf("reading Ioni filter settings to profile\r\n");
-			simucubelog.addEvent(Command_readIoniToProf);
-			smint32 temp;
-			smRead1Parameter(mSMBusHandle, 1, SMP_TORQUE_LPF_BANDWIDTH, &temp);
-			mConfig.profileConfigs[currentprofileindex].ioni_lpf = (uint8_t) temp;
-			smRead1Parameter(mSMBusHandle, 1, SMP_TORQUE_NOTCH_FILTER, &temp);
-			mConfig.profileConfigs[currentprofileindex].ioni_notch = temp;
-			smRead1Parameter(mSMBusHandle, 1, SMP_TORQUE_EFFECT_DAMPING, &temp);
-			mConfig.profileConfigs[currentprofileindex].ioni_damping = (uint16_t) temp;
-			smRead1Parameter(mSMBusHandle, 1, SMP_TORQUE_EFFECT_FRICTION, &temp);
-			mConfig.profileConfigs[currentprofileindex].ioni_friction = (uint16_t) temp;
-			smRead1Parameter(mSMBusHandle, 1, SMP_TORQUE_EFFECT_INERTIA, &temp);
-			mConfig.profileConfigs[currentprofileindex].ioni_inertia = (uint16_t) temp;
-			smRead1Parameter(mSMBusHandle, 1, SMP_SETPOINT_FILTER_MODE, &temp);
-			mConfig.profileConfigs[currentprofileindex].ioni_filter1 = (uint8_t) temp;
-			return true;
-			break;
-
 		case jmpToBootloader:
-			if(debugMode) printf("jumping to bootloader\r\n");
+		{
+			if(debugMode) printf(" jumping to bootloader\r\n");
 			simucubelog.addEvent(Command_jmpToBootLoader);
 			currentSystemStatus = JumpToBootLoader;
 			return false;
 			break;
-
+		}
 		case setForcesDisabled:
-			if(debugMode) printf("set forces disabled\r\n");
+		{
+			if(debugMode) printf(" set forces disabled\r\n");
 			simucubelog.addEvent(Command_disableForces);
-			forcesEnabled = false;
+			forcesEnabled = 0;
 			return true;
 			break;
-
+		}
 		case setForcesEnabled:
-			if(debugMode) printf("set forces enabled\r\n");
+		{
+			if(debugMode) printf(" set forces enabled\r\n");
 			simucubelog.addEvent(Command_enableForces);
-			forcesEnabled = true;
+			forcesEnabled = 1;
 			return true;
 			break;
-
+		}
 		case resetFFBvariables:
-			if(debugMode) printf("force-reset ffb device\r\n");
+		{
+			if(debugMode) printf(" force-reset ffb device\r\n");
 			simucubelog.addEvent(Command_resetFFBStates);
 			resetFFBDeviceState();
+			//todo: smooth return with todo drive functionality?
 			return true;
 			break;
-
+		}
+		case reEnableTorqueMode:
+		{
+			if(debugMode) printf(" re-enable torque generation\r\n");
+			simucubelog.addEvent(Command_reEnableTorque);
+			wirelessTorqueOffEvent=0;
+			return true;
+			break;
+		}
 		case startCommutationAutoSetup:
-			if(debugMode) printf("going to autosetup commucation\r\n");
+		{
+			if(debugMode) printf(" going to autosetup commucation\r\n");
 			simucubelog.addEvent(Command_setupCommutation);
 			previousSystemStatus2 = currentSystemStatus;
 			currentSystemStatus = AutoDetectCommutationSensors;
 			return false;
 			break;
-
+		}
 		case clearCommutationAutoSetup:
-			if(debugMode) printf("clear autosetup commucation\r\n");
+		{
+			if(debugMode) printf(" clear autosetup commucation\r\n");
 			simucubelog.addEvent(Command_clearCommutation);
 			clearCommutationConfig(); //also saves drive cfg
-			mConfig.hardwareConfig.mAutoCommutationMode=0;
-			mConfig.hardwareConfig.mIndexingMode=startAtCenterPhasedIndexing;
+			mConfig.hardwareConfig.hwSettings[addrVariousSettingsBits1]&=~(bitAutoCommutationMode);
+			mConfig.hardwareConfig.hwSettings[addrIndexingMode]=startAtCenterPhasedIndexing;
 			unsavedSettings=1;
 			return false;
 			break;
-
+		}
 		case setTemporaryVariable:
-			{
-			if(debugMode) printf("set temporary variable\r\n");
+		{
+			if(debugMode) printf(" set temporary variable\r\n");
 			commandPacket* packet = (commandPacket*) data;
 			uint16_t parameter = packet->value;
 			switch(parameter)
@@ -1801,14 +2123,299 @@ bool cFFBDevice::handleSimuCUBEAPIcommand(uint8_t* data) {
 					return false;
 					break;
 				default:
+					return true;
 					break;
+			}
+			return true;
+			break;
+		}
 
+
+
+		case startScanning:
+		{
+			handleStartScanningCmd();
+			return true;
+			break;
+		}
+
+		case stopScanning:
+		{
+			handleStopDiscoveryCmd();
+			return true;
+			break;
+		}
+
+		case getNumberOfFoundDevices:
+		{
+			handleGetNumberOfFoundDevicesCmd();
+			return true;
+			break;
+		}
+
+		case getDeviceData:
+		{
+			handleGetDeviceDataCmd(data);
+			return true;
+			break;
+		}
+
+		case getCurrentDeviceData:
+		{
+			handleGetCurrentDeviceDataCmd();
+			return true;
+			break;
+		}
+		case connectDevice:
+		{
+			handleConnectDeviceCmd(data);
+			return true;
+			break;
+		}
+		case disconnectDevice:
+		{
+			handleDisconnectDeviceCmd();
+			return true;
+			break;
+		}
+		case disconnectForgetDevice:
+		{
+			handleDisconnectForgetDeviceCmd();
+			return true;
+			break;
+		}
+		case setDriveParams:
+		{
+			if(debugMode) printf(" set Drive parameters");
+			simucubelog.addEvent(Command_writeDriveParams, true);
+			setSettingsDataPacket* packet = (setSettingsDataPacket*) data;
+			if(true) {
+				// proprietary simucube 2 command
+			} else {
+				for(int i=0;i<9;i++) {
+					if(packet->addrs[i]==0) {
+						break;
+					}
+					while(waitLastSimpleMotion) {
+						asm volatile("nop");
+					}
+					SM_STATUS status = smSetParameter(mSMBusHandle, 1, packet->addrs[i], packet->values[i]);
+					if(status!=SM_OK) {
+						break;
+					}
 				}
 			}
+			return true;
+			break;
+		}
+		case startReadDriveParams:
+		{
+			if(debugMode) printf(" read Drive parameters");
+			simucubelog.addEvent(Command_startReadDriveParams, true);
+			SM_STATUS statuss;
+			setSettingsDataPacket* packet = (setSettingsDataPacket*) data;
+			for(int i=0;i<9;i++) {
+				drivedatareply.addrs[i]=0;drivedatareply.values[i]=0;
+			}
+			for(int i=0;i<9;i++) {
+				if(packet->addrs[i]==0) {
+					break;
+				}
+				while(waitLastSimpleMotion) {
+					asm volatile("nop");
+				}
+
+				statuss = smRead1Parameter(mSMBusHandle, 1, packet->addrs[i], &drivedatareply.values[i]);
+				if(statuss!=SM_OK) {
+					if(debugMode) printf(" smbus error\r\n");
+					return true;
+					break;
+				}
+				drivedatareply.addrs[i]=packet->addrs[i];
+			}
+			printf("\r\n");
+			return true;
+			break;
+		}
+		case requestReadDriveParams:
+		{
+			if(debugMode) printf(" request last read drive parameter values\r\n");
+			simucubelog.addEvent(Command_readDriveParams, true);
+			drivedatareply.reportID=inReport;
+			drivedatareply.command=replyReadDriveParams;
+
+			while (returnvalue != USBD_OK) {
+				returnvalue = USBD_CUSTOM_HID_SendReport( &hUsbDeviceFS, (uint8_t*)&drivedatareply, 61);
+				if(returnvalue == USBD_BUSY) {if(debugMode2)printf(".");}
+			}
+			return true;
+			break;
+		}
 		default:
 			break;
 	}
 	return true;
 }
 
+void cFFBDevice::setBLEAutoConnectMode() {
+    // init BLE autoconnect mode
+    ConnectAutomaticallyToWirelessWheel mode = static_cast<ConnectAutomaticallyToWirelessWheel>(mConfig.hardwareConfig.hwSettings[addrAutoConnectBLEDevice]);
+    BLEConn.setAutomaticConnectionMode(mode);
+}
 
+void cFFBDevice::handleStartScanningCmd() {
+	BLEConn.clearDeviceList();
+	BLEConn.startDiscovery();
+}
+
+void cFFBDevice::handleStopDiscoveryCmd() {
+	BLEConn.stopDiscovery();
+	BLEConn.clearDeviceList();
+}
+
+void cFFBDevice::handleGetNumberOfFoundDevicesCmd(){
+	int returnvalue = USBD_BUSY;
+	replyPacket.reportID = inReport;
+	replyPacket.command = replyNumberofFoundDevices;
+	replyPacket.value = BLEConn.getAmountOfFoundDevices();
+	while (returnvalue != USBD_OK) {
+		returnvalue = USBD_CUSTOM_HID_SendReport( &hUsbDeviceFS, (uint8_t*)&replyPacket, 61);
+		if(returnvalue == USBD_BUSY) {if(debugMode2)printf(".");}
+	}
+}
+
+void cFFBDevice::handleGetDeviceDataCmd(uint8_t* data) {
+	int returnvalue = USBD_BUSY;
+	commandPacket* packet = (commandPacket*) data;
+	int number = packet->value;
+
+
+	blePacket.reportID = inReport;
+	blePacket.command = replyDeviceData;
+	BTDevice bledevicedata = BLEConn.getDeviceDataByNumber(number);
+	uint8_t* pointer = (uint8_t*)&bledevicedata.address;
+	for(int i = 0; i<6; i++) {
+		blePacket.mac[i] = *pointer;
+		pointer++;
+	}
+	blePacket.mac[6] = 0;
+	blePacket.mac[7] = 0;
+
+	for(int i = 0; i<10; i++) {
+		volatile uint8_t character = bledevicedata.name[i];
+		blePacket.devicename[i] = character;
+	}
+	blePacket.devicename[10] = 0;
+	blePacket.signalstrength = bledevicedata.rssi;
+	blePacket.bond = bledevicedata.bonding;
+	blePacket.namelength = bledevicedata.nameLength;
+	while (returnvalue != USBD_OK) {
+		returnvalue = USBD_CUSTOM_HID_SendReport( &hUsbDeviceFS, (uint8_t*)&blePacket, 61);
+		if(returnvalue == USBD_BUSY) {if(debugMode2)printf(".");}
+	}
+}
+
+void cFFBDevice::handleGetCurrentDeviceDataCmd() {
+	int returnvalue = USBD_BUSY;
+	blePacket.reportID = inReport;
+	blePacket.command = replyDeviceData;
+	bool connected = BLEConn.getConnectionState();
+	BTDevice bledevicedata = BLEConn.getConnectedDeviceInformation();
+	uint8_t* pointer = (uint8_t*)&bledevicedata.address;
+	for(int i = 0; i<6; i++) {
+		if(connected) {
+			blePacket.mac[i] = *pointer;
+		} else {
+			blePacket.mac[i] = 0;
+		}
+		pointer++;
+	}
+	blePacket.mac[6] = 0;
+	blePacket.mac[7] = 0;
+
+	for(int i = 0; i<10; i++) {
+		volatile uint8_t character;
+		if(connected) {
+			character = bledevicedata.name[i];
+		} else {
+			character=0;
+		}
+		blePacket.devicename[i] = character;
+	}
+	blePacket.devicename[10] = 0;
+	blePacket.signalstrength = bledevicedata.rssi;
+	blePacket.bond = bledevicedata.bonding;
+	blePacket.namelength = bledevicedata.nameLength;
+	int level = BLEConn.getBatteryVoltage();
+	level = (level - 2000) / 10; // 2.0 V and up in hundreths of volts
+	level = constrain(level, 0, 255);
+	blePacket.batterylevel = level;
+	blePacket.connectionquality = BLEConn.getConnectionQuality();
+	blePacket.batteryMeasurementStatus = BLEConn.getLowBatteryWarning();
+	while (returnvalue != USBD_OK) {
+		returnvalue = USBD_CUSTOM_HID_SendReport( &hUsbDeviceFS, (uint8_t*)&blePacket, 61);
+		if(returnvalue == USBD_BUSY) {if(debugMode2)printf(".");}
+	}
+
+}
+
+void cFFBDevice::handleConnectDeviceCmd(uint8_t* data) {
+	commandPacket* packet = (commandPacket*) data;
+	volatile int number = packet->value;
+	BLEConn.connectByDeviceNumber(number);
+}
+
+void cFFBDevice::handleDisconnectDeviceCmd() {
+	BLEConn.disconnectFromDevice();
+	BLEConn.clearDeviceList();
+}
+
+void cFFBDevice::handleDisconnectForgetDeviceCmd() {
+	BLEConn.forgetConnectedDevice();
+	handleDisconnectDeviceCmd();
+}
+
+
+uint16_t cFFBDevice::getUnsavedSettings() {
+	return (unsavedSettings<<unsavedSettingsBit);
+}
+
+void cFFBDevice::setIndexpointFound(bool found) {
+	if(found) {
+		_indexpointFound = 1;
+	} else {
+		_indexpointFound = 0;
+	}
+}
+bool cFFBDevice::getIndexpointFound() {
+	if(_indexpointFound == 0) {
+		return false;
+	}
+	return true;
+}
+
+uint16_t cFFBDevice::getDriveInitSuccessFlag() {
+	return (driveInitSuccessFlag<<initSuccessBit);
+}
+
+uint16_t cFFBDevice::getForceEnabled() {
+	return (forcesEnabled<<forcesEnabledBit);
+}
+
+uint16_t cFFBDevice::getBleDetected() {
+	return (bledetected<<bleModuleFoundBit);
+}
+
+uint16_t cFFBDevice::getSTOStatus() {
+	return (STOStatus<<stoStatusBit);
+}
+
+uint16_t cFFBDevice::getHighTorqueMode() {
+	return (highTorqueMode<<highTorqueModeBit);
+}
+
+
+// USB steering value is according to our descriptor unsigned 0..65536 where center is near 32768
+uint16_t cFFBDevice::usb_steering_angle() {
+	return (uint16_t) angle.getUSBAngle();
+}

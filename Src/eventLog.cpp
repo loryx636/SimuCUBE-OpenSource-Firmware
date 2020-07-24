@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2016-2018 Granite Devices Oy
+ * Copyright (c) 2016-2020 Granite Devices Oy
  * ---------------------------------------------------------------------------
  * This file is made available under the terms of Granite Devices Software
  * End-User License Agreement, available at https://granitedevices.com/legal
@@ -15,15 +15,10 @@
  * ---------------------------------------------------------------------------
 */
 
-/*
- * eventLog.cpp
- *
- *  Created on: Oct 31, 2017
- *      Author: Mika
- */
-
 #include <eventLog.h>
 #include "stm32f407xx.h"
+
+extern uint64_t millis;
 
 eventLog::eventLog() {
 	// TODO Auto-generated constructor stub
@@ -31,6 +26,7 @@ eventLog::eventLog() {
 	enabled=true;
 	lastEventIndex = logSize-1;
 	verbosity = logVerbosityNormal;
+	startTime=0;
 }
 
 eventLog::~eventLog() {
@@ -97,6 +93,13 @@ void eventLog::addEventParam(uint16_t event, int32_t parameter, bool forceAddEve
 
 void eventLog::addEvent(uint16_t event, bool forceAddEvent) {
 	addEventParam(event, 0, forceAddEvent);
+}
+
+void eventLog::resetLogStartTime() {
+	startTime=millis;
+}
+void eventLog::addTimeStamp() {
+	addEventParam(eventTimeStamp, (uint32_t)(millis-startTime), true);
 }
 
 void eventLog::getEvent(uint16_t eventIndex, uint16_t &event, int32_t &parameter) {

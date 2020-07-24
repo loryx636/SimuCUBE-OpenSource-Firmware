@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2016-2018 Granite Devices Oy
+ * Copyright (c) 2016-2020 Granite Devices Oy
  * ---------------------------------------------------------------------------
  * This file is made available under the terms of Granite Devices Software
  * End-User License Agreement, available at https://granitedevices.com/legal
@@ -38,6 +38,8 @@ void updateButtons_wrapper();
 void simucubelog_addevent_wrapper(uint16_t event, bool forced);
 void simucubelog_addeventParam_wrapper(uint16_t event, int32_t parameter, bool forced);
 uint32_t getVariousSettingsBits();
+void sendDisableHighTorque();
+uint32_t getHwId_wrapper();
 }
 
 

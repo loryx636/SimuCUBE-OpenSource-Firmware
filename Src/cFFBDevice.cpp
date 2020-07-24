@@ -631,7 +631,9 @@ void cFFBDevice::handleWirelessEvents() {
 	}
 
 	if (disconnected) {
-		wirelessTorqueOffEvent = 1;
+        if(inputDeviceList.getTorqueButtonState()){
+            wirelessTorqueOffEvent = 1;
+        }
 		lastWirelessVoltage = 0;
 		SMPlaySound(Disconnected);
 		inputDeviceList.clearConfiguration();

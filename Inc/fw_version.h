@@ -21,7 +21,7 @@
 
 #define FW_MAJOR_VERSION 1
 #define FW_MINOR_VERSION 0
-#define FW_BUILD_VERSION 22
+#define FW_BUILD_VERSION 24
 
 
 #endif /* FW_VERSION_H_ */

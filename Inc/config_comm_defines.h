@@ -843,6 +843,8 @@ typedef struct
 #define flashTooNewMajor				113
 #define flashTooNewMinor				114
 #define flashWriteFailure				115
+#define flashRewritePre01200			116
+#define flashRewritePre10000			117
 
 #define USB_ResetStack					130
 #define USB_Suspend						131

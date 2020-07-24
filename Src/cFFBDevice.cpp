@@ -693,6 +693,7 @@ void cFFBDevice::initUninitializedProfileParametersPre012() {
 			mConfig.profileConfigs[i].settings[j] = 0;
 		}
 	}
+	simucubelog.addEvent(flashRewritePre01200, true);
 }
 
 void cFFBDevice::resetParametersPre10000() {
@@ -702,6 +703,7 @@ void cFFBDevice::resetParametersPre10000() {
 	}
 	mConfig.hardwareConfig.hwSettings[addrEncoderOffset] = 0;
 	mConfig.hardwareConfig.hwSettings[addrDesktopSpringGain] = 0;
+	simucubelog.addEvent(flashRewritePre10000, true);
 }
 
 void cFFBDevice::adjustAnyWheelConnection() {
@@ -776,9 +778,17 @@ bool cFFBDevice::loadConfigsFromFlash() {
 		// need to write read-only default profile again.
 		rewriteDefault = true;
 	}
+
+	if(flashMajorVersion == 0 && flashMinorVersion<11) {
+		if(debugMode) printf("reading flash status: too old minor settings on flash!\r\n");
+		simucubelog.addEvent(flashTooOldMinor);
+		return false;
+	}
+
 	bool doCRC = false;
-	if((flashMajorVersion>=0)) {
+	if((flashMajorVersion==0)) {
 		if(flashMinorVersion>=11) {
+			// handles simucube 1 >=0.11.x
 			if((flashMinorVersion==11)) {
 				if((flashBuildVersion< 7)) {
 					doCRC=false;
@@ -789,8 +799,12 @@ bool cFFBDevice::loadConfigsFromFlash() {
 				doCRC=true;
 			}
 		} else {
+			// handles simucube 1 < 0.11.x
 			doCRC=false;
 		}
+	} else if (flashMajorVersion>0) {
+		// handles simucube 1 (1.x.x) and simucube 2 (all versions)
+		doCRC = true;
 	}
 
 	if(doCRC) {

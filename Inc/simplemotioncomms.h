@@ -54,7 +54,7 @@ enum fwUpdateStatus {FWUpdateFailed, FwNotUpdated, FWUpdated};
 
 void broadcastSystemStatus(SystemStatus status);
 
-#define smbustimeout 50 //in milliseconds
+#define smbustimeout 50 // 1 count=10ms
 
 
 // enable/disable SM watchdog
@@ -68,10 +68,16 @@ bool WaitForIndexPulse( int &indexPos );
 // wait for watchdog to time out
 void startWatchDogWaitingDelay();
 
-//init SM bus baudrate. can call again after loss of communication to re-init. return -1 if fail, 0 if success.
-//param HighBPSMode=true sets high pbs mode and enables watchdog, false sets default and disables watchdog
-int initSMBusBaudrate( bool HighBPSMode );
+/** $brief init SM bus baudrate. can call again after loss of communication to re-init.
+ *
+ * @param HighBPSMode =true sets high baudrate mode false sets default baudrate
+ * @return -1 if fail, 0 if success.
+ */
 
+int initSMBusBaudrate(bool HighBPSMode);
+
+// disables drive
+void disableSMDrive();
 
 //Drive initialization
 // mega function

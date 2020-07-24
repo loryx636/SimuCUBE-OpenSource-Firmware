@@ -554,7 +554,7 @@ int main(void)
 			{
 				if(debugMode && statusChanged) printf("state: setBaudrateForOperational \r\n");
 				if(statusChanged) simucubelog.addEvent(StateSetBaudrate);
-
+                enableSMWatchdog();
 				initSMBusBaudrate(true);
 				joystick.gFFBDevice.driveParamTracker.updateParameters(true);
 				initFastUpdateCycleMode();
@@ -859,8 +859,8 @@ int main(void)
 				if(statusChanged) simucubelog.addEvent(StateJumpBootloader);
 				resetMaxMMC();
 				HAL_Delay(5);
-				// init drive to default baudrate
 				initSMBusBaudrate(false);
+				disableSMDrive();
 				simucube_bootloader(RESET_TO_BOOTLOADER_MAGIC_CODE);
 				while(1) {
 					asm("nop");

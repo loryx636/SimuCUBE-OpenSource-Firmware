@@ -2058,6 +2058,15 @@ bool cFFBDevice::handleSimuCUBEAPIcommand(uint8_t* data) {
 			if(debugMode) printf(" force-reset ffb device\r\n");
 			simucubelog.addEvent(Command_resetFFBStates);
 			resetFFBDeviceState();
+			//todo: smooth return with todo drive functionality?
+			return true;
+			break;
+		}
+		case reEnableTorqueMode:
+		{
+			if(debugMode) printf(" re-enable torque generation\r\n");
+			simucubelog.addEvent(Command_reEnableTorque);
+			wirelessTorqueOffEvent=0;
 			return true;
 			break;
 		}

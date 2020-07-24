@@ -31,9 +31,14 @@ void EndstopEffect::refresh(bool enabled, int32_t rawOffset, int32_t newEndstopS
 
     int32_t index = newEndstopSetting;
 
+    // safety if previous version has problematic parameters
     if(index > (_numEndstopSettings - 1)) {
         index = _numEndstopSettings-1;
     }
+    if(index < 0) {
+    	index = 0;
+    }
+
     endstopSetting newSetting = endstopSettings[index];
     int32_t raw_gain = newSetting.damperGain;
     int32_t raw_max_torque = newSetting.rawMaxTorque;
@@ -88,9 +93,9 @@ void EndstopEffect::testSafeStart(encoderAngle* angle) {
     // warning: these float prints are very slow when enabled, causes true drive disconnects.
     if(margin<0) {
         _unsafe = true;
-        endstopprintf("ENDSTOP: unsafe! margin = %f - %f - %f - %f = %f\r\n", this->max_angle/2.0, currentAngle, this->offset, this->range, margin);
+        endstopprintf("ENDSTOP: unsafe! margin = %f - %f - %f - %f = %f\r\n", _maxAngle/2.0, currentAngle, _offset, _range, margin);
     } else{
-        endstopprintf("ENDSTOP: safe to start,  margin = %f - %f - %f - %f = %f\r\n", this->max_angle/2.0, currentAngle, this->offset, this->range, margin);
+        endstopprintf("ENDSTOP: safe to start,  margin = %f - %f - %f - %f = %f\r\n", _maxAngle/2.0, currentAngle, _offset, _range, margin);
         _unsafe = false;
     }
 }

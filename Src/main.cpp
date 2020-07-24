@@ -412,6 +412,9 @@ int main(void)
 			joystick.gFFBDevice.resetParametersPre10000();
 		}
 
+		// convert "connect to any wheel" setting from 1.0.22/23 to connec to paired wheels
+		joystick.gFFBDevice.adjustAnyWheelConnection();
+
 		if(joystick.gFFBDevice.mConfig.hardwareConfig.hwSettings[addrVariousSettingsBits1]&(1<<bitInitialConfigDone))  {
 			if(debugMode) printf("Initial configuration has been performed. Initializing drive.\r\n");
 			simucubelog.addEvent(EventInitialConfigDone, true);

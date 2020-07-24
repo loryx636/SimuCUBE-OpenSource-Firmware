@@ -66,7 +66,7 @@ void cHardwareConfig::SetDefault() {
 	hwSettings[addrButtonDebounceMs]=5;
 	// the rest will be set at factory test bench or when user resets settings to default.
 	// Some of the settings are device dependent.
-	hwSettings[addrAutoConnectBLEDevice] = static_cast<int32_t>(ConnectAutomaticallyToWirelessWheel::ToAnyDevice);
+	hwSettings[addrAutoConnectBLEDevice] = static_cast<int32_t>(ConnectAutomaticallyToWirelessWheel::ToPairedDevice);
 }
 
 

@@ -977,7 +977,7 @@ typedef struct
 /* Enum for Low battery state warning based on voltage difference between different connection intervals */
 enum LowBatteryWarning {NotReady, NoWarning, Warning};
 
-enum ConnectAutomaticallyToWirelessWheel {ToAnyDevice, ToPairedDevice, Never};
+enum ConnectAutomaticallyToWirelessWheel {ToPairedDevice, Never};
 
 #endif
 

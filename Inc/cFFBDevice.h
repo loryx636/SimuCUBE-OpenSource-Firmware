@@ -116,6 +116,7 @@ public:
 	bool checkIfPre10000Data();
 	void initUninitializedProfileParametersPre012();
 	void resetParametersPre10000();
+	void adjustAnyWheelConnection();
 
 	uint32_t reverse(uint32_t x);
 	uint32_t crc32a(const uint8_t *message, uint32_t datalength);

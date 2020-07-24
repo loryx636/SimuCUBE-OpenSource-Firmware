@@ -702,7 +702,19 @@ void cFFBDevice::resetParametersPre10000() {
 	mConfig.hardwareConfig.hwSettings[addrDesktopSpringGain] = 0;
 }
 
-
+void cFFBDevice::adjustAnyWheelConnection() {
+	if(flashMajorVersion == 1 && flashMinorVersion == 0 && flashBuildVersion<24) {
+		int32_t oldsetting = mConfig.hardwareConfig.hwSettings[addrAutoConnectBLEDevice];
+		// old no  		= 2, new = 1
+		// old yes 		= 1, new = 0;
+		// old yes_any  = 0, new = 0;
+		oldsetting--;
+		if(oldsetting < 0) {
+			oldsetting = 0;
+		}
+		mConfig.hardwareConfig.hwSettings[addrAutoConnectBLEDevice] = oldsetting;
+	}
+}
 
 bool cFFBDevice::fillFlashZeroes(uint32_t startAddress, uint32_t length) {
 	// flash erase fills with 0xFFFF. Do not do anything here.

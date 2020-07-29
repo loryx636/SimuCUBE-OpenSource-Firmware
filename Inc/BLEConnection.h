@@ -215,6 +215,8 @@ private:
 
     ConnectAutomaticallyToWirelessWheel automaticConnectionMode = Never;
 
+    bool speedChangedToSlow;
+
     void appHandleEvents(struct gecko_cmd_packet *evt);
 	void change_task(tasks new_task);
 	void change_state(states new_state);

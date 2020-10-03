@@ -69,7 +69,7 @@ void EndstopEffect::update(float steeringAngle, encoderAngle* angle) {
     // if the offset is by a bug larger than (max_angle / 2.0) this will always go to zero, and the direction
     // is selected by the sign so this just works (tm). this does require max_angle to be sensible. there
     // has been discussions of max_angle > 90
-    _distance = fmax(0.0f, (_maxAngle) - _offset - fabs(steeringAngle));
+    _distance = fmax(0.0f, (_maxAngle) - _offset - fabs(steeringAngle) + _range);
 
     if (_distance >= _range) {
         // too far away from ends

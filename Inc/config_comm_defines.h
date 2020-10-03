@@ -443,6 +443,7 @@
 #define disconnectDevice			136
 #define getCurrentDeviceData        137
 #define disconnectForgetDevice      138
+#define forgetAllWirelessDevices    139
 
 #define setDriveParams				150
 #define startReadDriveParams		151

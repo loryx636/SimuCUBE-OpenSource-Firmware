@@ -517,7 +517,7 @@ void cFFBDevice::initVariables() {
 	        mConfig.profileConfigs[currentprofileindex].settings[addrEndstopOffset],
 	        mConfig.profileConfigs[currentprofileindex].settings[addrBumpstopSetting],
 		max_angle,
-		200.0f/DRIVEUPDATERATE,
+		50.0f/DRIVEUPDATERATE,
 		&angle);
 
 	// middle position momentarily, proper value with possibly new
@@ -2184,6 +2184,12 @@ bool cFFBDevice::handleSimuCUBEAPIcommand(uint8_t* data) {
 			return true;
 			break;
 		}
+	    case forgetAllWirelessDevices:
+	    {
+            handleForgetAllCmd();
+            return true;
+            break;
+	    }
 		case setDriveParams:
 		{
 			if(debugMode) printf(" set Drive parameters");
@@ -2272,6 +2278,7 @@ void cFFBDevice::handleStopDiscoveryCmd() {
 	BLEConn.stopDiscovery();
 	BLEConn.clearDeviceList();
 }
+
 
 void cFFBDevice::handleGetNumberOfFoundDevicesCmd(){
 	int returnvalue = USBD_BUSY;
@@ -2373,6 +2380,10 @@ void cFFBDevice::handleDisconnectDeviceCmd() {
 void cFFBDevice::handleDisconnectForgetDeviceCmd() {
 	BLEConn.forgetConnectedDevice();
 	handleDisconnectDeviceCmd();
+}
+
+void cFFBDevice::handleForgetAllCmd() {
+    BLEConn.forgetAllDevices();
 }
 
 

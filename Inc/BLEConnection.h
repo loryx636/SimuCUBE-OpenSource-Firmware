@@ -155,6 +155,7 @@ private:
 		task_indicate_battery_voltage,
 		task_indicate_uptime,
 		task_check_security,
+		task_clear_bonding,
 		task_set_slow_connection,
 		task_disconnect,
 		task_last
@@ -171,6 +172,7 @@ private:
 		"indicate_battery_voltage",
 		"indicate_uptime",
 		"check_security",
+		"clear_bonding",
 		"set_slow_connection",
 		"set_disconnect"
 	};
@@ -297,6 +299,11 @@ public:
 	void forgetConnectedDevice();
 
     void setAutomaticConnectionMode(ConnectAutomaticallyToWirelessWheel mode);
+
+    /**
+     * @brief Forgets all buttonplate bondings from BLE module.
+     */
+    void forgetAllDevices();
 };
 
 #ifdef __cplusplus

@@ -184,7 +184,7 @@ public:
 	int ledCyclePointer;
 
 	// wireless wheel handling calls.
-	// These are also used by factorytester, therefore must be public.
+	// These can also used by factorytester, therefore must be public.
 	void handleStartScanningCmd();
 	void handleStopDiscoveryCmd();
 	void handleGetNumberOfFoundDevicesCmd();
@@ -193,6 +193,7 @@ public:
 	void handleConnectDeviceCmd(uint8_t* data);
 	void handleDisconnectDeviceCmd();
 	void handleDisconnectForgetDeviceCmd();
+    void handleForgetAllCmd();
 
 
 	// this contains all motor config and profiles

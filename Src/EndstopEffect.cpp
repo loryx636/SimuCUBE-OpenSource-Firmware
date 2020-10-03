@@ -136,21 +136,15 @@ void EndstopEffect::totalOut(float speed, float &filteredTorque, float &directTo
     // directTorque (effects) is at lower scale than the main filteredTorque signal.
 
     const float endstopTorque = torque(speed);
-    if ((endstopTorque < 0.0f) == (filteredTorque < 0.0f)) {
-        // both are to the same direction, pick the greatest
-        if (endstopTorque < 0.0f) {
-            filteredTorque = fmin(filteredTorque, endstopTorque);
-        } else {
-            filteredTorque = fmax(filteredTorque, endstopTorque);
-        }
-    } else {
-        // different direction. scale filteredTorque down and add the endstop torque
-        filteredTorque = filteredTorque * fmax(0.0f, fmin(1.0f, _distance / _range));
-        filteredTorque += endstopTorque;
+    endstopprintf("%f\r\n", endstopTorque);
+    if(fabs(endstopTorque) > 1.0f) {
+        // scale torques (vibration, etc) so that they will be already
+        // zero at half way of ramp
+        // directTorque = directTorque * fmax(0.0f, fmin(1.0f, (_range - ((_range - _distance) * 2.0f)) / _range));
+        // optimized:
+        directTorque = directTorque * fmin(1.0f, (_range * -1.0f + 2.0f * _distance ) / _range);
+        filteredTorque = filteredTorque * fmin(1.0f, (_range * -1.0f + 2.0f * _distance ) / _range);
     }
-    // scale effect torques (vibration, etc) so that they will be already
-    // zero at half way of ramp
-    // directTorque = directTorque * fmax(0.0f, fmin(1.0f, (_range - ((_range - _distance) * 2.0f)) / _range));
-    // optimized:
-    directTorque = directTorque * fmax(0.0f, fmin(1.0f, (_range * -1.0f + 2.0f * _distance ) / _range));
+    directTorque += endstopTorque;
+
 }

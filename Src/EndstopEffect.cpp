@@ -91,7 +91,7 @@ void EndstopEffect::testSafeStart(encoderAngle* angle) {
     float margin = _maxAngle - abs(angle->getUnlimitedSteeringAngle()) - _offset - _range - _deadBand;
 
     // warning: these float prints are very slow when enabled, causes true drive disconnects.
-    if(margin<0) {
+    if(margin < 0.1f) {
         _unsafe = true;
         endstopprintf("ENDSTOP: unsafe! margin = %f - %f - %f - %f = %f\r\n", _maxAngle/2.0, currentAngle, _offset, _range, margin);
     } else{
@@ -115,7 +115,7 @@ float EndstopEffect::torque(float speed) {
         return lpf.process(0.0f);
     }
 
-    _endstop = (float)_direction * fmax(0.0f, fmin(1.0f, (_range - _distance)/_range));
+    _endstop = (float)_direction * fmax(0.0f, fmin(1.0f, (_range - _distance) / _range));
 
     // 80 is because the original version used angle difference instead of time. the speed is based
     // on axis count (0..65535) difference per encoder read timestamps.

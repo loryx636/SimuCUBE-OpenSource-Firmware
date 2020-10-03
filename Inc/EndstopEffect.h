@@ -37,7 +37,7 @@ private:
     const endstopSetting endstopSettings[3] = {
             {30, 100, 35},
             {40, 100, 17},
-            {50, 100, 5}
+            {50, 100, 10}
     };
 
     const int _numEndstopSettings = sizeof(endstopSettings)/sizeof(endstopSetting);

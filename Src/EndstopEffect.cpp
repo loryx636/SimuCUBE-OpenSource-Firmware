@@ -69,7 +69,7 @@ void EndstopEffect::update(float steeringAngle, encoderAngle* angle) {
     // if the offset is by a bug larger than (max_angle / 2.0) this will always go to zero, and the direction
     // is selected by the sign so this just works (tm). this does require max_angle to be sensible. there
     // has been discussions of max_angle > 90
-    _distance = fmax(0.0f, (_maxAngle) - _offset - fabs(steeringAngle));
+    _distance = fmax(0.0f, (_maxAngle) - _offset - fabs(steeringAngle) + _range);
 
     if (_distance >= _range) {
         // too far away from ends
@@ -91,7 +91,7 @@ void EndstopEffect::testSafeStart(encoderAngle* angle) {
     float margin = _maxAngle - abs(angle->getUnlimitedSteeringAngle()) - _offset - _range - _deadBand;
 
     // warning: these float prints are very slow when enabled, causes true drive disconnects.
-    if(margin<0) {
+    if(margin < 0.1f) {
         _unsafe = true;
         endstopprintf("ENDSTOP: unsafe! margin = %f - %f - %f - %f = %f\r\n", _maxAngle/2.0, currentAngle, _offset, _range, margin);
     } else{
@@ -115,7 +115,7 @@ float EndstopEffect::torque(float speed) {
         return lpf.process(0.0f);
     }
 
-    _endstop = (float)_direction * fmax(0.0f, fmin(1.0f, (_range - _distance)/_range));
+    _endstop = (float)_direction * fmax(0.0f, fmin(1.0f, (_range - _distance) / _range));
 
     // 80 is because the original version used angle difference instead of time. the speed is based
     // on axis count (0..65535) difference per encoder read timestamps.
@@ -136,21 +136,15 @@ void EndstopEffect::totalOut(float speed, float &filteredTorque, float &directTo
     // directTorque (effects) is at lower scale than the main filteredTorque signal.
 
     const float endstopTorque = torque(speed);
-    if ((endstopTorque < 0.0f) == (filteredTorque < 0.0f)) {
-        // both are to the same direction, pick the greatest
-        if (endstopTorque < 0.0f) {
-            filteredTorque = fmin(filteredTorque, endstopTorque);
-        } else {
-            filteredTorque = fmax(filteredTorque, endstopTorque);
-        }
-    } else {
-        // different direction. scale filteredTorque down and add the endstop torque
-        filteredTorque = filteredTorque * fmax(0.0f, fmin(1.0f, _distance / _range));
-        filteredTorque += endstopTorque;
+    endstopprintf("%f\r\n", endstopTorque);
+    if(fabs(endstopTorque) > 1.0f) {
+        // scale torques (vibration, etc) so that they will be already
+        // zero at half way of ramp
+        // directTorque = directTorque * fmax(0.0f, fmin(1.0f, (_range - ((_range - _distance) * 2.0f)) / _range));
+        // optimized:
+        directTorque = directTorque * fmin(1.0f, (_range * -1.0f + 2.0f * _distance ) / _range);
+        filteredTorque = filteredTorque * fmin(1.0f, (_range * -1.0f + 2.0f * _distance ) / _range);
     }
-    // scale effect torques (vibration, etc) so that they will be already
-    // zero at half way of ramp
-    // directTorque = directTorque * fmax(0.0f, fmin(1.0f, (_range - ((_range - _distance) * 2.0f)) / _range));
-    // optimized:
-    directTorque = directTorque * fmax(0.0f, fmin(1.0f, (_range * -1.0f + 2.0f * _distance ) / _range));
+    directTorque += endstopTorque;
+
 }

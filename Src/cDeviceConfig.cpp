@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2016-2018 Granite Devices Oy
+ * Copyright (c) 2016-2020 Granite Devices Oy
  * ---------------------------------------------------------------------------
  * This file is made available under the terms of Granite Devices Software
  * End-User License Agreement, available at https://granitedevices.com/legal
@@ -15,13 +15,6 @@
  * ---------------------------------------------------------------------------
 */
 
-/*
- * cDeviceConfig.cpp
- *
- *  Created on: Jan 30, 2017
- *      Author: Mika
- */
-
 #include <cDeviceConfig.h>
 
 cDeviceConfig::cDeviceConfig() {
@@ -34,17 +27,21 @@ cDeviceConfig::~cDeviceConfig() {
 }
 
 void cDeviceConfig::SetDefault() {
-	for(int i=0; i<maxnumprofiles; i++) {
+	for(int i=0; i<maxnumprofiles_v11; i++) {
 		profileConfigs[i].SetDefault();
 	}
 	const char* defaulttext = "Read-only safe profile";
 	memcpy(profileConfigs[0].profilename, defaulttext, 22);
 	profileConfigs[0].profilename[22] = 0;
-	profileConfigs[0].mMainGain=20;
-	profileConfigs[0].ioni_lpf = 6;
+	profileConfigs[0].settings[addrMainGain]=20;
+	profileConfigs[0].settings[addrIoniLPF] = 6;
 	//profileConfig.SetDefault();
 	hardwareConfig.SetDefault();
-	analogConfig.setDefault();
+	for(int i = 0; i< maxnumanalogconfigs; i++){
+		analogConfig[i].setDefault();
+	}
+	buttonConfig.setDefault();
+
 }
 
 void cDeviceConfig::setReadOnlyDefaultProfileValues() {
@@ -53,24 +50,48 @@ void cDeviceConfig::setReadOnlyDefaultProfileValues() {
 	const char* defaulttext = "Read-only safe profile";
 	memcpy(profileConfigs[0].profilename, defaulttext, 22);
 	profileConfigs[0].profilename[22] = 0;
-	profileConfigs[0].mMainGain=20;
-	profileConfigs[0].ioni_lpf = 6;
+
+	/* set read-only default profile parameters to match
+	 * one of the simple settings mode possibilities
+	 * (average filtering, average smoothness)
+	 */
+
+	profileConfigs[0].settings[addrMainGain]=20;
+	profileConfigs[0].settings[addrIoniLPF] = 8;
+
+	profileConfigs[0].settings[addrFrictionGain]=8;
+	profileConfigs[0].settings[addrDamperGain]=8;
+	profileConfigs[0].settings[addrInertiaGain]=100;
+
+	profileConfigs[0].settings[addrIoniDamping]=81;
+	profileConfigs[0].settings[addrIoniFriction]=59;
+	profileConfigs[0].settings[addrIoniInertia]=99;
+	profileConfigs[0].settings[addrIoniFilter1]=5;
+
 }
 
+
+void cDeviceConfig::replaceOutOfRangeWithDefaultProfileParameter(int32_t& parameter, int32_t low, int32_t high, int32_t def) {
+	if(parameter<low) parameter=def;
+	if(parameter>high) parameter=def;
+}
+
+void cDeviceConfig::validateProfile(uint32_t profileindex) {
+
+}
+
+
 uint8_t * cDeviceConfig::GetProfileConfigAddr(uint16_t profileindex) {
-	return ((uint8_t*)&profileConfigs[profileindex].mMaxAngle);
+	return ((uint8_t*)&profileConfigs[profileindex].settings[addrMaxAngle]);
 }
 
 uint8_t * cDeviceConfig::GetHardwareConfigAddr() {
-	return ((uint8_t*)&hardwareConfig.mEncoderOffset);
+	return ((uint8_t*)&hardwareConfig.hwSettings[0]);
 }
 
 uint8_t * cDeviceConfig::GetAnalogConfigAddr() {
-	return ((uint8_t*)&analogConfig.Y);
-	//return ((uint8_t*)&(analogConfig.Y.pin));
+	return ((uint8_t*)&analogConfig[0].axises[0].settings[addrAnalogPin]);
 }
-
-									// dest, src, size
 
 // gets profile config data to conf
 void cDeviceConfig::getProfile(int *conf, uint16_t profileindex) {

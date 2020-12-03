@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2016-2018 Granite Devices Oy
+ * Copyright (c) 2016-2020 Granite Devices Oy
  * ---------------------------------------------------------------------------
  * This file is made available under the terms of Granite Devices Software
  * End-User License Agreement, available at https://granitedevices.com/legal
@@ -26,6 +26,7 @@
 #include "USBGameController.h"
 #include "usbd_core.h"
 #include "eventLog.h"
+#include "hw_functions.h"
 extern USBD_HandleTypeDef hUsbDeviceFS;
 extern eventLog simucubelog;
 
@@ -44,17 +45,13 @@ void FfbOnCreateNewEffect_wrapper() {
 
 void send_mSetReportAnswer_wrapper() {
 	USBD_HandleTypeDef *pdev  = &hUsbDeviceFS;
-	//printf("sra\r\n");
-	//USBD_CtlSendData(pdev,(uint8_t *)&mSetReportAnswer,sizeof(USB_FFBReport_PIDBlockLoad_Feature_Data_t));
-	USBD_CtlSendData(pdev,(uint8_t *)joystick.get_mSetReportAnswer(),sizeof(USB_FFBReport_PIDBlockLoad_Feature_Data_t));
-	//printf("sra\r\n");
-	//joystick.set_mSetReportAnswerId(0); //mSetReportAnswer.reportId = 0;
+	USBD_CtlSendData(pdev, (uint8_t *)joystick.get_mSetReportAnswer(), sizeof(USB_FFBReport_PIDBlockLoad_Feature_Data_t));
 }
 
 void send_mGetReportAnswer_wrapper(uint8_t report_id) {
-	joystick.set_mGetReportAnswer(report_id); //mGetReportAnswer.reportId = report_id; also sets other members of struct.
+	joystick.set_mGetReportAnswer(report_id);
 	USBD_HandleTypeDef *pdev  = &hUsbDeviceFS;
-	USBD_CtlSendData(pdev,(uint8_t *)joystick.get_mGetReportAnswer(),sizeof(USB_FFBReport_PIDPool_Feature_Data_t));
+	USBD_CtlSendData(pdev, (uint8_t *)joystick.get_mGetReportAnswer(), sizeof(USB_FFBReport_PIDPool_Feature_Data_t));
 }
 
 void simucubelog_addevent_wrapper(uint16_t event, bool forced) {
@@ -66,8 +63,13 @@ void simucubelog_addeventParam_wrapper(uint16_t event, int32_t parameter, bool f
 }
 
 uint32_t getVariousSettingsBits() {
-	return joystick.gFFBDevice.mConfig.hardwareConfig.variousSettingsBits;
+	return joystick.gFFBDevice.mConfig.hardwareConfig.hwSettings[addrVariousSettingsBits1];
 }
+
+void sendDisableHighTorque() {
+	joystick.gFFBDevice.sendDisableHighTorque=1;
+}
+
 }
 /* end callback wrappers from C USB HAL code. */
 

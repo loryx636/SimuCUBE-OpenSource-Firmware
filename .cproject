@@ -29,6 +29,7 @@
 									<listOptionValue builtIn="false" value="&quot;${workspace_loc:/${ProjName}/SimpleMotion}&quot;"/>
 									<listOptionValue builtIn="false" value="&quot;${workspace_loc:/SimuCUBE-firmware-libs/SimpleMotion}&quot;"/>
 									<listOptionValue builtIn="false" value="../SimpleMotion"/>
+									<listOptionValue builtIn="false" value="&quot;${workspace_loc:/SimuCUBE-firmware-TrueStudio/Inc_simucube}&quot;"/>
 								</option>
 								<option id="com.atollic.truestudio.gcc.symbols.defined.1670122205" name="Defined symbols" superClass="com.atollic.truestudio.gcc.symbols.defined" useByScannerDiscovery="false"/>
 								<option id="com.atollic.truestudio.as.general.otherflags.51384659" name="Other options" superClass="com.atollic.truestudio.as.general.otherflags" useByScannerDiscovery="false" value="" valueType="string"/>
@@ -46,6 +47,7 @@
 							</tool>
 							<tool command="arm-atollic-eabi-gcc -c " commandLinePattern="${COMMAND} ${FLAGS} ${OUTPUT_FLAG}${OUTPUT_PREFIX} ${OUTPUT} ${INPUTS}" id="com.atollic.truestudio.exe.debug.toolchain.gcc.1836874447" name="C Compiler" superClass="com.atollic.truestudio.exe.debug.toolchain.gcc">
 								<option id="com.atollic.truestudio.gcc.directories.select.330946435" name="Include path" superClass="com.atollic.truestudio.gcc.directories.select" useByScannerDiscovery="false" valueType="includePath">
+									<listOptionValue builtIn="false" value="&quot;${workspace_loc:/SimuCUBE-firmware-TrueStudio/Inc_simucube}&quot;"/>
 									<listOptionValue builtIn="false" value="&quot;${workspace_loc:/SimuCUBE-firmware-libs}&quot;"/>
 									<listOptionValue builtIn="false" value="../Inc"/>
 									<listOptionValue builtIn="false" value="../Drivers/STM32F4xx_HAL_Driver/Inc"/>
@@ -111,6 +113,7 @@
 								<option id="com.atollic.truestudio.common_options.target.fpucore.1297069055" name="FPU" superClass="com.atollic.truestudio.common_options.target.fpucore" useByScannerDiscovery="false" value="com.atollic.truestudio.common_options.target.fpucore.fpv4-sp-d16" valueType="enumerated"/>
 								<option id="com.atollic.truestudio.common_options.target.interwork.1589021531" name="Mix ARM/Thumb" superClass="com.atollic.truestudio.common_options.target.interwork" useByScannerDiscovery="false"/>
 								<option id="com.atollic.truestudio.gpp.directories.select.765430386" name="Include path" superClass="com.atollic.truestudio.gpp.directories.select" useByScannerDiscovery="false" valueType="includePath">
+									<listOptionValue builtIn="false" value="&quot;${workspace_loc:/SimuCUBE-firmware-TrueStudio/Inc_simucube}&quot;"/>
 									<listOptionValue builtIn="false" value="&quot;${workspace_loc:/SimuCUBE-firmware-libs}&quot;"/>
 									<listOptionValue builtIn="false" value="../Inc"/>
 									<listOptionValue builtIn="false" value="../Drivers/STM32F4xx_HAL_Driver/Inc"/>
@@ -158,56 +161,33 @@
 							<tool id="com.atollic.truestudio.ar.base.1045543565" name="Archiver" superClass="com.atollic.truestudio.ar.base"/>
 						</toolChain>
 					</folderInfo>
-					<folderInfo id="com.atollic.truestudio.exe.debug.1518366166.2059109765" name="/" resourcePath="Drivers">
-						<toolChain id="com.atollic.truestudio.exe.debug.toolchain.1520577120" name="Atollic ARM Tools" superClass="com.atollic.truestudio.exe.debug.toolchain" unusedChildren="">
-							<option id="com.atollic.truestudio.general.runtimelib.936401667.584978631" name="Runtime Library" superClass="com.atollic.truestudio.general.runtimelib.936401667"/>
-							<option id="com.atollic.truestudio.toolchain_options.mcu.2026743693.561641979" name="Microcontroller" superClass="com.atollic.truestudio.toolchain_options.mcu.2026743693"/>
-							<option id="com.atollic.truestudio.toolchain_options.vendor.1511712876.1409300988" name="Vendor name" superClass="com.atollic.truestudio.toolchain_options.vendor.1511712876"/>
-							<targetPlatform archList="all" binaryParser="org.eclipse.cdt.core.ELF" id="com.atollic.truestudio.exe.debug.toolchain.platform" isAbstract="false" name="Debug platform" osList="all" superClass="com.atollic.truestudio.exe.debug.toolchain.platform"/>
-							<tool id="com.atollic.truestudio.exe.debug.toolchain.as.602840470" name="Assembler" superClass="com.atollic.truestudio.exe.debug.toolchain.as.1545899283">
-								<inputType id="com.atollic.truestudio.as.input.395485356" name="Input" superClass="com.atollic.truestudio.as.input"/>
-							</tool>
-							<tool id="com.atollic.truestudio.exe.debug.toolchain.gcc.1484776367" name="C Compiler" superClass="com.atollic.truestudio.exe.debug.toolchain.gcc.1836874447">
-								<option id="com.atollic.truestudio.gcc.directories.select.798851256" name="Include path" superClass="com.atollic.truestudio.gcc.directories.select" useByScannerDiscovery="false" valueType="includePath">
-									<listOptionValue builtIn="false" value="&quot;${workspace_loc:/SimuCUBE-firmware-libs}&quot;"/>
-									<listOptionValue builtIn="false" value="../Inc"/>
-									<listOptionValue builtIn="false" value="../Drivers/STM32F4xx_HAL_Driver/Inc"/>
-									<listOptionValue builtIn="false" value="../Drivers/STM32F4xx_HAL_Driver/Inc/Legacy"/>
-									<listOptionValue builtIn="false" value="../Drivers/CMSIS/Device/ST/STM32F4xx/Include"/>
-									<listOptionValue builtIn="false" value="../Drivers/CMSIS/Include"/>
-									<listOptionValue builtIn="false" value="&quot;${workspace_loc:/SimuCUBE-firmware-libs/SimpleMotion}&quot;"/>
-									<listOptionValue builtIn="false" value="&quot;${workspace_loc:/SimuCUBE-firmware-libs/${BUILD_CONFIGURATION}}&quot;"/>
-									<listOptionValue builtIn="false" value="../SimpleMotion"/>
-								</option>
-								<inputType id="com.atollic.truestudio.gcc.input.1431026443" superClass="com.atollic.truestudio.gcc.input"/>
-							</tool>
-							<tool id="com.atollic.truestudio.exe.debug.toolchain.ld.383969325" name="C Linker" superClass="com.atollic.truestudio.exe.debug.toolchain.ld.1444973427"/>
-							<tool id="com.atollic.truestudio.exe.debug.toolchain.gpp.922892057" name="C++ Compiler" superClass="com.atollic.truestudio.exe.debug.toolchain.gpp.981298185">
-								<option id="com.atollic.truestudio.gpp.directories.select.45573342" name="Include path" superClass="com.atollic.truestudio.gpp.directories.select" useByScannerDiscovery="false" valueType="includePath">
-									<listOptionValue builtIn="false" value="&quot;${workspace_loc:/SimuCUBE-firmware-libs}&quot;"/>
-									<listOptionValue builtIn="false" value="../Inc"/>
-									<listOptionValue builtIn="false" value="../Drivers/STM32F4xx_HAL_Driver/Inc"/>
-									<listOptionValue builtIn="false" value="../Drivers/STM32F4xx_HAL_Driver/Inc/Legacy"/>
-									<listOptionValue builtIn="false" value="../Drivers/CMSIS/Device/ST/STM32F4xx/Include"/>
-									<listOptionValue builtIn="false" value="../Drivers/CMSIS/Include"/>
-								</option>
-								<inputType id="com.atollic.truestudio.gpp.input.1767516159" superClass="com.atollic.truestudio.gpp.input"/>
-							</tool>
-							<tool id="com.atollic.truestudio.exe.debug.toolchain.ldcc.1727630240" name="C++ Linker" superClass="com.atollic.truestudio.exe.debug.toolchain.ldcc.428260"/>
-							<tool id="com.atollic.truestudio.ar.base.1330212167" name="Archiver" superClass="com.atollic.truestudio.ar.base.1045543565"/>
-							<tool id="com.atollic.truestudio.exe.debug.toolchain.secoutput.937136900" name="Other" superClass="com.atollic.truestudio.exe.debug.toolchain.secoutput.839033486"/>
-						</toolChain>
-					</folderInfo>
 					<fileInfo id="com.atollic.truestudio.exe.debug.311825581.983937533" name="" rcbsApplicability="disable" resourcePath="nofile" toolsToInvoke="com.atollic.truestudio.exe.debug.toolchain.gcc.1836874447.1976695455">
 						<tool id="com.atollic.truestudio.exe.debug.toolchain.gcc.1836874447.1976695455" name="C Compiler" superClass="com.atollic.truestudio.exe.debug.toolchain.gcc.1836874447">
 							<inputType id="com.atollic.truestudio.gcc.input.1274347818" superClass="com.atollic.truestudio.gcc.input"/>
 						</tool>
 					</fileInfo>
+					<folderInfo id="com.atollic.truestudio.exe.debug.1518366166.511821305" name="/" resourcePath="Examples">
+						<toolChain id="com.atollic.truestudio.exe.debug.toolchain.956197390" name="Atollic ARM Tools" superClass="com.atollic.truestudio.exe.debug.toolchain" unusedChildren="">
+							<option id="com.atollic.truestudio.general.runtimelib.936401667.1544551593" name="Runtime Library" superClass="com.atollic.truestudio.general.runtimelib.936401667"/>
+							<option id="com.atollic.truestudio.toolchain_options.mcu.2026743693.2044937173" name="Microcontroller" superClass="com.atollic.truestudio.toolchain_options.mcu.2026743693"/>
+							<option id="com.atollic.truestudio.toolchain_options.vendor.1511712876.74335367" name="Vendor name" superClass="com.atollic.truestudio.toolchain_options.vendor.1511712876"/>
+							<tool id="com.atollic.truestudio.exe.debug.toolchain.as.1788049980" name="Assembler" superClass="com.atollic.truestudio.exe.debug.toolchain.as.1545899283">
+								<inputType id="com.atollic.truestudio.as.input.2085172012" name="Input" superClass="com.atollic.truestudio.as.input"/>
+							</tool>
+							<tool id="com.atollic.truestudio.exe.debug.toolchain.gcc.1751880718" name="C Compiler" superClass="com.atollic.truestudio.exe.debug.toolchain.gcc.1836874447">
+								<inputType id="com.atollic.truestudio.gcc.input.1299862054" superClass="com.atollic.truestudio.gcc.input"/>
+							</tool>
+							<tool id="com.atollic.truestudio.exe.debug.toolchain.ld.525085941" name="C Linker" superClass="com.atollic.truestudio.exe.debug.toolchain.ld.1444973427"/>
+							<tool id="com.atollic.truestudio.exe.debug.toolchain.gpp.1403050441" name="C++ Compiler" superClass="com.atollic.truestudio.exe.debug.toolchain.gpp.981298185">
+								<inputType id="com.atollic.truestudio.gpp.input.1443291343" superClass="com.atollic.truestudio.gpp.input"/>
+							</tool>
+							<tool id="com.atollic.truestudio.exe.debug.toolchain.ldcc.1458630190" name="C++ Linker" superClass="com.atollic.truestudio.exe.debug.toolchain.ldcc.428260"/>
+							<tool id="com.atollic.truestudio.ar.base.1789074777" name="Archiver" superClass="com.atollic.truestudio.ar.base.1045543565"/>
+							<tool id="com.atollic.truestudio.exe.debug.toolchain.secoutput.2084564498" name="Other" superClass="com.atollic.truestudio.exe.debug.toolchain.secoutput.839033486"/>
+						</toolChain>
+					</folderInfo>
 					<sourceEntries>
-						<entry flags="VALUE_WORKSPACE_PATH|RESOLVED" kind="sourcePath" name="Drivers"/>
-						<entry flags="VALUE_WORKSPACE_PATH|RESOLVED" kind="sourcePath" name="Inc"/>
-						<entry flags="VALUE_WORKSPACE_PATH|RESOLVED" kind="sourcePath" name="Src"/>
-						<entry flags="VALUE_WORKSPACE_PATH|RESOLVED" kind="sourcePath" name="startup"/>
+						<entry excluding="Examples" flags="VALUE_WORKSPACE_PATH|RESOLVED" kind="sourcePath" name=""/>
 					</sourceEntries>
 				</configuration>
 			</storageModule>
@@ -254,6 +234,7 @@
 									<listOptionValue builtIn="false" value="&quot;${workspace_loc:/${ProjName}/SimpleMotion}&quot;"/>
 									<listOptionValue builtIn="false" value="&quot;${workspace_loc:/SimuCUBE-firmware-libs/SimpleMotion}&quot;"/>
 									<listOptionValue builtIn="false" value="../SimpleMotion"/>
+									<listOptionValue builtIn="false" value="&quot;${workspace_loc:/SimuCUBE-firmware-TrueStudio/Inc_simucube}&quot;"/>
 								</option>
 								<option id="com.atollic.truestudio.gcc.symbols.defined.1670122205" name="Defined symbols" superClass="com.atollic.truestudio.gcc.symbols.defined"/>
 								<option id="com.atollic.truestudio.as.general.otherflags.51384659" name="Other options" superClass="com.atollic.truestudio.as.general.otherflags" value="" valueType="string"/>
@@ -278,6 +259,7 @@
 									<listOptionValue builtIn="false" value="&quot;${workspace_loc:/${ProjName}/SimpleMotion}&quot;"/>
 									<listOptionValue builtIn="false" value="&quot;${workspace_loc:/SimuCUBE-firmware-libs/SimpleMotion}&quot;"/>
 									<listOptionValue builtIn="false" value="../SimpleMotion"/>
+									<listOptionValue builtIn="false" value="&quot;${workspace_loc:/SimuCUBE-firmware-TrueStudio/Inc_simucube}&quot;"/>
 								</option>
 								<option id="com.atollic.truestudio.gcc.symbols.defined.1670122205" name="Defined symbols" superClass="com.atollic.truestudio.gcc.symbols.defined" valueType="definedSymbols">
 									<listOptionValue builtIn="false" value="__weak=__attribute__((weak))"/>
@@ -333,6 +315,7 @@
 									<listOptionValue builtIn="false" value="&quot;${workspace_loc:/${ProjName}/SimpleMotion}&quot;"/>
 									<listOptionValue builtIn="false" value="&quot;${workspace_loc:/SimuCUBE-firmware-libs/SimpleMotion}&quot;"/>
 									<listOptionValue builtIn="false" value="../SimpleMotion"/>
+									<listOptionValue builtIn="false" value="&quot;${workspace_loc:/SimuCUBE-firmware-TrueStudio/Inc_simucube}&quot;"/>
 								</option>
 								<inputType id="com.atollic.truestudio.gpp.input.667170131" superClass="com.atollic.truestudio.gpp.input"/>
 							</tool>
@@ -372,10 +355,7 @@
 						</tool>
 					</fileInfo>
 					<sourceEntries>
-						<entry flags="VALUE_WORKSPACE_PATH|RESOLVED" kind="sourcePath" name="Drivers"/>
-						<entry flags="VALUE_WORKSPACE_PATH|RESOLVED" kind="sourcePath" name="Inc"/>
-						<entry flags="VALUE_WORKSPACE_PATH|RESOLVED" kind="sourcePath" name="Src"/>
-						<entry flags="VALUE_WORKSPACE_PATH|RESOLVED" kind="sourcePath" name="startup"/>
+						<entry flags="VALUE_WORKSPACE_PATH|RESOLVED" kind="sourcePath" name=""/>
 					</sourceEntries>
 				</configuration>
 			</storageModule>
@@ -412,6 +392,7 @@
 								<option id="com.atollic.truestudio.common_options.target.instr_set.1869721463" name="Instruction set" superClass="com.atollic.truestudio.common_options.target.instr_set" useByScannerDiscovery="false" value="com.atollic.truestudio.common_options.target.instr_set.thumb2" valueType="enumerated"/>
 								<option id="com.atollic.truestudio.as.general.incpath.62980719" name="Include path" superClass="com.atollic.truestudio.as.general.incpath" useByScannerDiscovery="false" valueType="includePath">
 									<listOptionValue builtIn="false" value="../SimpleMotion"/>
+									<listOptionValue builtIn="false" value="&quot;${workspace_loc:/SimuCUBE-firmware-TrueStudio/Inc_simucube}&quot;"/>
 								</option>
 								<option id="com.atollic.truestudio.gcc.symbols.defined.105607540" name="Defined symbols" superClass="com.atollic.truestudio.gcc.symbols.defined" useByScannerDiscovery="false"/>
 								<option id="com.atollic.truestudio.as.general.otherflags.486517459" name="Other options" superClass="com.atollic.truestudio.as.general.otherflags" useByScannerDiscovery="false" value="" valueType="string"/>
@@ -435,6 +416,7 @@
 									<listOptionValue builtIn="false" value="../Drivers/STM32F4xx_HAL_Driver/Inc/Legacy"/>
 									<listOptionValue builtIn="false" value="../Drivers/CMSIS/Device/ST/STM32F4xx/Include"/>
 									<listOptionValue builtIn="false" value="../Drivers/CMSIS/Include"/>
+									<listOptionValue builtIn="false" value="&quot;${workspace_loc:/SimuCUBE-firmware-TrueStudio/Inc_simucube}&quot;"/>
 								</option>
 								<option id="com.atollic.truestudio.gcc.symbols.defined.1230294928" name="Defined symbols" superClass="com.atollic.truestudio.gcc.symbols.defined" useByScannerDiscovery="false" valueType="definedSymbols">
 									<listOptionValue builtIn="false" value="__weak=__attribute__((weak))"/>
@@ -495,6 +477,7 @@
 									<listOptionValue builtIn="false" value="../Drivers/STM32F4xx_HAL_Driver/Inc"/>
 									<listOptionValue builtIn="false" value="../Drivers/CMSIS/Device/ST/STM32F4xx/Include"/>
 									<listOptionValue builtIn="false" value="../Drivers/CMSIS/Include"/>
+									<listOptionValue builtIn="false" value="&quot;${workspace_loc:/SimuCUBE-firmware-TrueStudio/Inc_simucube}&quot;"/>
 								</option>
 								<option id="com.atollic.truestudio.gpp.warnings.fatal.797186435" name="Abort compilation on first error" superClass="com.atollic.truestudio.gpp.warnings.fatal" useByScannerDiscovery="false" value="true" valueType="boolean"/>
 								<option id="com.atollic.truestudio.gpp.cppstandard.1321751399" name="C++ standard" superClass="com.atollic.truestudio.gpp.cppstandard" useByScannerDiscovery="false" value="com.atollic.truestudio.gpp.cppstandard.gnupp0x" valueType="enumerated"/>
@@ -535,83 +518,13 @@
 							<tool id="com.atollic.truestudio.ar.base.936883865" name="Archiver" superClass="com.atollic.truestudio.ar.base"/>
 						</toolChain>
 					</folderInfo>
-					<folderInfo id="com.atollic.truestudio.exe.debug.1518366166.438091160.Drivers" name="/" resourcePath="Drivers">
-						<toolChain id="com.atollic.truestudio.exe.debug.toolchain.1502007724" name="Atollic ARM Tools" superClass="com.atollic.truestudio.exe.debug.toolchain" unusedChildren="">
-							<option id="com.atollic.truestudio.general.runtimelib.936401667.584978631.2087189043" name="Runtime Library" superClass="com.atollic.truestudio.general.runtimelib.936401667"/>
-							<option id="com.atollic.truestudio.toolchain_options.mcu.2026743693.561641979.1364473054" name="Microcontroller" superClass="com.atollic.truestudio.toolchain_options.mcu.2026743693"/>
-							<option id="com.atollic.truestudio.toolchain_options.vendor.1511712876.1409300988.606723652" name="Vendor name" superClass="com.atollic.truestudio.toolchain_options.vendor.1511712876"/>
-							<targetPlatform archList="all" binaryParser="org.eclipse.cdt.core.ELF" id="com.atollic.truestudio.exe.debug.toolchain.platform.905272884" isAbstract="false" name="Debug platform" osList="all" superClass="com.atollic.truestudio.exe.debug.toolchain.platform"/>
-							<tool id="com.atollic.truestudio.exe.debug.toolchain.as.1988839425" name="Assembler" superClass="com.atollic.truestudio.exe.debug.toolchain.as.1455590459">
-								<inputType id="com.atollic.truestudio.as.input.1976031675" name="Input" superClass="com.atollic.truestudio.as.input"/>
-							</tool>
-							<tool id="com.atollic.truestudio.exe.debug.toolchain.gcc.916416529" name="C Compiler" superClass="com.atollic.truestudio.exe.debug.toolchain.gcc.370745673">
-								<option id="com.atollic.truestudio.gcc.directories.select.2090532513" name="Include path" superClass="com.atollic.truestudio.gcc.directories.select" useByScannerDiscovery="false" valueType="includePath">
-									<listOptionValue builtIn="false" value="&quot;${workspace_loc:/SimuCUBE-firmware-libs}&quot;"/>
-									<listOptionValue builtIn="false" value="../Inc"/>
-									<listOptionValue builtIn="false" value="../Drivers/STM32F4xx_HAL_Driver/Inc"/>
-									<listOptionValue builtIn="false" value="../Drivers/STM32F4xx_HAL_Driver/Inc/Legacy"/>
-									<listOptionValue builtIn="false" value="../Drivers/CMSIS/Device/ST/STM32F4xx/Include"/>
-									<listOptionValue builtIn="false" value="../Drivers/CMSIS/Include"/>
-									<listOptionValue builtIn="false" value="&quot;${workspace_loc:/SimuCUBE-firmware-libs/SimpleMotion}&quot;"/>
-								</option>
-								<inputType id="com.atollic.truestudio.gcc.input.709156898" superClass="com.atollic.truestudio.gcc.input"/>
-							</tool>
-							<tool id="com.atollic.truestudio.exe.debug.toolchain.ld.1532440173" name="C Linker" superClass="com.atollic.truestudio.exe.debug.toolchain.ld.207658615"/>
-							<tool id="com.atollic.truestudio.exe.debug.toolchain.gpp.1042454488" name="C++ Compiler" superClass="com.atollic.truestudio.exe.debug.toolchain.gpp.273227468">
-								<option id="com.atollic.truestudio.gpp.directories.select.1132530319" name="Include path" superClass="com.atollic.truestudio.gpp.directories.select" useByScannerDiscovery="false" valueType="includePath">
-									<listOptionValue builtIn="false" value="&quot;${workspace_loc:/SimuCUBE-firmware-libs}&quot;"/>
-									<listOptionValue builtIn="false" value="../Inc"/>
-									<listOptionValue builtIn="false" value="../Drivers/STM32F4xx_HAL_Driver/Inc"/>
-									<listOptionValue builtIn="false" value="../Drivers/STM32F4xx_HAL_Driver/Inc/Legacy"/>
-									<listOptionValue builtIn="false" value="../Drivers/CMSIS/Device/ST/STM32F4xx/Include"/>
-									<listOptionValue builtIn="false" value="../Drivers/CMSIS/Include"/>
-								</option>
-								<inputType id="com.atollic.truestudio.gpp.input.1408104616" superClass="com.atollic.truestudio.gpp.input"/>
-							</tool>
-							<tool id="com.atollic.truestudio.exe.debug.toolchain.ldcc.79770833" name="C++ Linker" superClass="com.atollic.truestudio.exe.debug.toolchain.ldcc.1964662079"/>
-							<tool id="com.atollic.truestudio.ar.base.1965957343" name="Archiver" superClass="com.atollic.truestudio.ar.base.936883865"/>
-							<tool id="com.atollic.truestudio.exe.debug.toolchain.secoutput.1371679391" name="Other" superClass="com.atollic.truestudio.exe.debug.toolchain.secoutput.1514372723"/>
-						</toolChain>
-					</folderInfo>
-					<folderInfo id="com.atollic.truestudio.exe.debug.1518366166.438091160.514371628" name="/" resourcePath="startup">
-						<toolChain id="com.atollic.truestudio.exe.debug.toolchain.847287822" name="Atollic ARM Tools" superClass="com.atollic.truestudio.exe.debug.toolchain" unusedChildren="">
-							<option id="com.atollic.truestudio.general.runtimelib.1352340187.1155092804" name="Runtime Library" superClass="com.atollic.truestudio.general.runtimelib.1352340187"/>
-							<option id="com.atollic.truestudio.toolchain_options.mcu.1124672341.1568960369" name="Microcontroller" superClass="com.atollic.truestudio.toolchain_options.mcu.1124672341"/>
-							<option id="com.atollic.truestudio.toolchain_options.vendor.1664077576.1760766374" name="Vendor name" superClass="com.atollic.truestudio.toolchain_options.vendor.1664077576"/>
-							<targetPlatform archList="all" binaryParser="org.eclipse.cdt.core.ELF" id="com.atollic.truestudio.exe.debug.toolchain.platform" isAbstract="false" name="Debug platform" osList="all" superClass="com.atollic.truestudio.exe.debug.toolchain.platform"/>
-							<tool id="com.atollic.truestudio.exe.debug.toolchain.as.1937894504" name="Assembler" superClass="com.atollic.truestudio.exe.debug.toolchain.as.1455590459">
-								<inputType id="com.atollic.truestudio.as.input.1520042607" name="Input" superClass="com.atollic.truestudio.as.input"/>
-							</tool>
-							<tool id="com.atollic.truestudio.exe.debug.toolchain.gcc.125251859" name="C Compiler" superClass="com.atollic.truestudio.exe.debug.toolchain.gcc.370745673">
-								<inputType id="com.atollic.truestudio.gcc.input.1634506000" superClass="com.atollic.truestudio.gcc.input"/>
-							</tool>
-							<tool id="com.atollic.truestudio.exe.debug.toolchain.ld.882732121" name="C Linker" superClass="com.atollic.truestudio.exe.debug.toolchain.ld.207658615"/>
-							<tool id="com.atollic.truestudio.exe.debug.toolchain.gpp.510447786" name="C++ Compiler" superClass="com.atollic.truestudio.exe.debug.toolchain.gpp.273227468">
-								<option id="com.atollic.truestudio.gpp.directories.select.911339684" name="Include path" superClass="com.atollic.truestudio.gpp.directories.select" useByScannerDiscovery="false" valueType="includePath">
-									<listOptionValue builtIn="false" value="&quot;${workspace_loc:/SimuCUBE-firmware-libs}&quot;"/>
-									<listOptionValue builtIn="false" value="../Inc"/>
-									<listOptionValue builtIn="false" value="../Drivers/STM32F4xx_HAL_Driver/Inc"/>
-									<listOptionValue builtIn="false" value="../Drivers/CMSIS/Device/ST/STM32F4xx/Include"/>
-									<listOptionValue builtIn="false" value="../Drivers/CMSIS/Include"/>
-									<listOptionValue builtIn="false" value="../SimpleMotion"/>
-								</option>
-								<inputType id="com.atollic.truestudio.gpp.input.1740187339" superClass="com.atollic.truestudio.gpp.input"/>
-							</tool>
-							<tool id="com.atollic.truestudio.exe.debug.toolchain.ldcc.1409840380" name="C++ Linker" superClass="com.atollic.truestudio.exe.debug.toolchain.ldcc.1964662079"/>
-							<tool id="com.atollic.truestudio.ar.base.1554553384" name="Archiver" superClass="com.atollic.truestudio.ar.base.936883865"/>
-							<tool id="com.atollic.truestudio.exe.debug.toolchain.secoutput.84311622" name="Other" superClass="com.atollic.truestudio.exe.debug.toolchain.secoutput.1514372723"/>
-						</toolChain>
-					</folderInfo>
 					<fileInfo id="com.atollic.truestudio.exe.debug.1518366166.438091160.nofile" name="" rcbsApplicability="disable" resourcePath="nofile" toolsToInvoke="com.atollic.truestudio.exe.debug.toolchain.gcc.115357155">
 						<tool id="com.atollic.truestudio.exe.debug.toolchain.gcc.115357155" name="C Compiler" superClass="com.atollic.truestudio.exe.debug.toolchain.gcc.370745673">
 							<inputType id="com.atollic.truestudio.gcc.input.1184707514" superClass="com.atollic.truestudio.gcc.input"/>
 						</tool>
 					</fileInfo>
 					<sourceEntries>
-						<entry flags="VALUE_WORKSPACE_PATH|RESOLVED" kind="sourcePath" name="Drivers"/>
-						<entry flags="VALUE_WORKSPACE_PATH|RESOLVED" kind="sourcePath" name="Inc"/>
-						<entry excluding="Command.cpp" flags="VALUE_WORKSPACE_PATH|RESOLVED" kind="sourcePath" name="Src"/>
-						<entry flags="VALUE_WORKSPACE_PATH|RESOLVED" kind="sourcePath" name="startup"/>
+						<entry flags="VALUE_WORKSPACE_PATH|RESOLVED" kind="sourcePath" name=""/>
 					</sourceEntries>
 				</configuration>
 			</storageModule>
@@ -658,6 +571,7 @@
 									<listOptionValue builtIn="false" value="&quot;${workspace_loc:/SimuCUBE-firmware-libs}&quot;"/>
 									<listOptionValue builtIn="false" value="&quot;${workspace_loc:/SimuCUBE-firmware-libs/SimpleMotion}&quot;"/>
 									<listOptionValue builtIn="false" value="../SimpleMotion"/>
+									<listOptionValue builtIn="false" value="&quot;${workspace_loc:/SimuCUBE-firmware-TrueStudio/Inc_simucube}&quot;"/>
 								</option>
 								<option id="com.atollic.truestudio.gcc.symbols.defined.106774455" name="Defined symbols" superClass="com.atollic.truestudio.gcc.symbols.defined" useByScannerDiscovery="false"/>
 								<option id="com.atollic.truestudio.as.general.otherflags.246935368" name="Other options" superClass="com.atollic.truestudio.as.general.otherflags" useByScannerDiscovery="false" value="" valueType="string"/>
@@ -681,6 +595,7 @@
 									<listOptionValue builtIn="false" value="../Drivers/STM32F4xx_HAL_Driver/Inc/Legacy"/>
 									<listOptionValue builtIn="false" value="../Drivers/CMSIS/Device/ST/STM32F4xx/Include"/>
 									<listOptionValue builtIn="false" value="../Drivers/CMSIS/Include"/>
+									<listOptionValue builtIn="false" value="&quot;${workspace_loc:/SimuCUBE-firmware-TrueStudio/Inc_simucube}&quot;"/>
 								</option>
 								<option id="com.atollic.truestudio.gcc.symbols.defined.1462157992" name="Defined symbols" superClass="com.atollic.truestudio.gcc.symbols.defined" useByScannerDiscovery="false" valueType="definedSymbols">
 									<listOptionValue builtIn="false" value="__weak=__attribute__((weak))"/>
@@ -742,6 +657,7 @@
 									<listOptionValue builtIn="false" value="../Drivers/STM32F4xx_HAL_Driver/Inc"/>
 									<listOptionValue builtIn="false" value="../Drivers/CMSIS/Device/ST/STM32F4xx/Include"/>
 									<listOptionValue builtIn="false" value="../Drivers/CMSIS/Include"/>
+									<listOptionValue builtIn="false" value="&quot;${workspace_loc:/SimuCUBE-firmware-TrueStudio/Inc_simucube}&quot;"/>
 								</option>
 								<option id="com.atollic.truestudio.gpp.warnings.fatal.1407086871" name="Abort compilation on first error" superClass="com.atollic.truestudio.gpp.warnings.fatal" useByScannerDiscovery="false" value="true" valueType="boolean"/>
 								<option id="com.atollic.truestudio.gpp.cppstandard.1188060667" name="C++ standard" superClass="com.atollic.truestudio.gpp.cppstandard" useByScannerDiscovery="false" value="com.atollic.truestudio.gpp.cppstandard.gnupp0x" valueType="enumerated"/>
@@ -783,83 +699,33 @@
 							<tool id="com.atollic.truestudio.ar.base.1044331508" name="Archiver" superClass="com.atollic.truestudio.ar.base"/>
 						</toolChain>
 					</folderInfo>
-					<folderInfo id="com.atollic.truestudio.exe.debug.1518366166.438091160.33038386.Drivers" name="/" resourcePath="Drivers">
-						<toolChain errorParsers="" id="com.atollic.truestudio.exe.debug.toolchain.1059948157" name="Atollic ARM Tools" superClass="com.atollic.truestudio.exe.debug.toolchain" unusedChildren="">
-							<option id="com.atollic.truestudio.general.runtimelib.936401667.584978631.2087189043.1235895864" name="Runtime Library" superClass="com.atollic.truestudio.general.runtimelib.936401667"/>
-							<option id="com.atollic.truestudio.toolchain_options.mcu.2026743693.561641979.1364473054.652781478" name="Microcontroller" superClass="com.atollic.truestudio.toolchain_options.mcu.2026743693"/>
-							<option id="com.atollic.truestudio.toolchain_options.vendor.1511712876.1409300988.606723652.1540602331" name="Vendor name" superClass="com.atollic.truestudio.toolchain_options.vendor.1511712876"/>
-							<targetPlatform archList="all" binaryParser="org.eclipse.cdt.core.ELF" id="com.atollic.truestudio.exe.debug.toolchain.platform.482527012" isAbstract="false" name="Debug platform" osList="all" superClass="com.atollic.truestudio.exe.debug.toolchain.platform"/>
-							<tool errorParsers="org.eclipse.cdt.core.GASErrorParser" id="com.atollic.truestudio.exe.debug.toolchain.as.1902914942" name="Assembler" superClass="com.atollic.truestudio.exe.debug.toolchain.as.955850714">
-								<inputType id="com.atollic.truestudio.as.input.89033153" name="Input" superClass="com.atollic.truestudio.as.input"/>
-							</tool>
-							<tool errorParsers="org.eclipse.cdt.core.GCCErrorParser" id="com.atollic.truestudio.exe.debug.toolchain.gcc.1161449831" name="C Compiler" superClass="com.atollic.truestudio.exe.debug.toolchain.gcc.359043188">
-								<option id="com.atollic.truestudio.gcc.directories.select.1581654224" name="Include path" superClass="com.atollic.truestudio.gcc.directories.select" useByScannerDiscovery="false" valueType="includePath">
-									<listOptionValue builtIn="false" value="&quot;${workspace_loc:/SimuCUBE-firmware-libs}&quot;"/>
-									<listOptionValue builtIn="false" value="../Inc"/>
-									<listOptionValue builtIn="false" value="../Drivers/STM32F4xx_HAL_Driver/Inc"/>
-									<listOptionValue builtIn="false" value="../Drivers/STM32F4xx_HAL_Driver/Inc/Legacy"/>
-									<listOptionValue builtIn="false" value="../Drivers/CMSIS/Device/ST/STM32F4xx/Include"/>
-									<listOptionValue builtIn="false" value="../Drivers/CMSIS/Include"/>
-									<listOptionValue builtIn="false" value="&quot;${workspace_loc:/SimuCUBE-firmware-libs/SimpleMotion}&quot;"/>
-								</option>
-								<inputType id="com.atollic.truestudio.gcc.input.94740291" superClass="com.atollic.truestudio.gcc.input"/>
-							</tool>
-							<tool id="com.atollic.truestudio.exe.debug.toolchain.ld.204979561" name="C Linker" superClass="com.atollic.truestudio.exe.debug.toolchain.ld.619913132"/>
-							<tool errorParsers="org.eclipse.cdt.core.GCCErrorParser" id="com.atollic.truestudio.exe.debug.toolchain.gpp.557600524" name="C++ Compiler" superClass="com.atollic.truestudio.exe.debug.toolchain.gpp.962756888">
-								<option id="com.atollic.truestudio.gpp.directories.select.1754979510" name="Include path" superClass="com.atollic.truestudio.gpp.directories.select" useByScannerDiscovery="false" valueType="includePath">
-									<listOptionValue builtIn="false" value="&quot;${workspace_loc:/SimuCUBE-firmware-libs}&quot;"/>
-									<listOptionValue builtIn="false" value="../Inc"/>
-									<listOptionValue builtIn="false" value="../Drivers/STM32F4xx_HAL_Driver/Inc"/>
-									<listOptionValue builtIn="false" value="../Drivers/STM32F4xx_HAL_Driver/Inc/Legacy"/>
-									<listOptionValue builtIn="false" value="../Drivers/CMSIS/Device/ST/STM32F4xx/Include"/>
-									<listOptionValue builtIn="false" value="../Drivers/CMSIS/Include"/>
-								</option>
-								<inputType id="com.atollic.truestudio.gpp.input.1861926953" superClass="com.atollic.truestudio.gpp.input"/>
-							</tool>
-							<tool id="com.atollic.truestudio.exe.debug.toolchain.ldcc.2145741367" name="C++ Linker" superClass="com.atollic.truestudio.exe.debug.toolchain.ldcc.511051918"/>
-							<tool id="com.atollic.truestudio.ar.base.1153964494" name="Archiver" superClass="com.atollic.truestudio.ar.base.1044331508"/>
-							<tool id="com.atollic.truestudio.exe.debug.toolchain.secoutput.1692912099" name="Other" superClass="com.atollic.truestudio.exe.debug.toolchain.secoutput.553125063"/>
-						</toolChain>
-					</folderInfo>
-					<folderInfo id="com.atollic.truestudio.exe.debug.1518366166.438091160.33038386.startup" name="/" resourcePath="startup">
-						<toolChain errorParsers="" id="com.atollic.truestudio.exe.debug.toolchain.61076910" name="Atollic ARM Tools" superClass="com.atollic.truestudio.exe.debug.toolchain" unusedChildren="">
-							<option id="com.atollic.truestudio.general.runtimelib.1352340187.1155092804.1903451929" name="Runtime Library" superClass="com.atollic.truestudio.general.runtimelib.1352340187"/>
-							<option id="com.atollic.truestudio.toolchain_options.mcu.1124672341.1568960369.2112385910" name="Microcontroller" superClass="com.atollic.truestudio.toolchain_options.mcu.1124672341"/>
-							<option id="com.atollic.truestudio.toolchain_options.vendor.1664077576.1760766374.41628694" name="Vendor name" superClass="com.atollic.truestudio.toolchain_options.vendor.1664077576"/>
-							<targetPlatform archList="all" binaryParser="org.eclipse.cdt.core.ELF" id="com.atollic.truestudio.exe.debug.toolchain.platform.1519948794" isAbstract="false" name="Debug platform" osList="all" superClass="com.atollic.truestudio.exe.debug.toolchain.platform"/>
-							<tool errorParsers="org.eclipse.cdt.core.GASErrorParser" id="com.atollic.truestudio.exe.debug.toolchain.as.1345095996" name="Assembler" superClass="com.atollic.truestudio.exe.debug.toolchain.as.955850714">
-								<inputType id="com.atollic.truestudio.as.input.1950693185" name="Input" superClass="com.atollic.truestudio.as.input"/>
-							</tool>
-							<tool errorParsers="org.eclipse.cdt.core.GCCErrorParser" id="com.atollic.truestudio.exe.debug.toolchain.gcc.65501495" name="C Compiler" superClass="com.atollic.truestudio.exe.debug.toolchain.gcc.359043188">
-								<inputType id="com.atollic.truestudio.gcc.input.1832384361" superClass="com.atollic.truestudio.gcc.input"/>
-							</tool>
-							<tool id="com.atollic.truestudio.exe.debug.toolchain.ld.1744914913" name="C Linker" superClass="com.atollic.truestudio.exe.debug.toolchain.ld.619913132"/>
-							<tool errorParsers="org.eclipse.cdt.core.GCCErrorParser" id="com.atollic.truestudio.exe.debug.toolchain.gpp.1545148219" name="C++ Compiler" superClass="com.atollic.truestudio.exe.debug.toolchain.gpp.962756888">
-								<option id="com.atollic.truestudio.gpp.directories.select.916686256" name="Include path" superClass="com.atollic.truestudio.gpp.directories.select" useByScannerDiscovery="false" valueType="includePath">
-									<listOptionValue builtIn="false" value="&quot;${workspace_loc:/SimuCUBE-firmware-libs}&quot;"/>
-									<listOptionValue builtIn="false" value="../Inc"/>
-									<listOptionValue builtIn="false" value="../Drivers/STM32F4xx_HAL_Driver/Inc"/>
-									<listOptionValue builtIn="false" value="../Drivers/CMSIS/Device/ST/STM32F4xx/Include"/>
-									<listOptionValue builtIn="false" value="../Drivers/CMSIS/Include"/>
-									<listOptionValue builtIn="false" value="../SimpleMotion"/>
-								</option>
-								<inputType id="com.atollic.truestudio.gpp.input.519285493" superClass="com.atollic.truestudio.gpp.input"/>
-							</tool>
-							<tool id="com.atollic.truestudio.exe.debug.toolchain.ldcc.1703009416" name="C++ Linker" superClass="com.atollic.truestudio.exe.debug.toolchain.ldcc.511051918"/>
-							<tool id="com.atollic.truestudio.ar.base.81520179" name="Archiver" superClass="com.atollic.truestudio.ar.base.1044331508"/>
-							<tool id="com.atollic.truestudio.exe.debug.toolchain.secoutput.1476492904" name="Other" superClass="com.atollic.truestudio.exe.debug.toolchain.secoutput.553125063"/>
-						</toolChain>
-					</folderInfo>
 					<fileInfo id="com.atollic.truestudio.exe.debug.1518366166.438091160.33038386.nofile" name="" rcbsApplicability="disable" resourcePath="nofile" toolsToInvoke="com.atollic.truestudio.exe.debug.toolchain.gcc.1729578512">
 						<tool errorParsers="org.eclipse.cdt.core.GCCErrorParser" id="com.atollic.truestudio.exe.debug.toolchain.gcc.1729578512" name="C Compiler" superClass="com.atollic.truestudio.exe.debug.toolchain.gcc.359043188">
 							<inputType id="com.atollic.truestudio.gcc.input.1747013659" superClass="com.atollic.truestudio.gcc.input"/>
 						</tool>
 					</fileInfo>
+					<folderInfo id="com.atollic.truestudio.exe.debug.1518366166.438091160.33038386.1636978685" name="/" resourcePath="Examples">
+						<toolChain id="com.atollic.truestudio.exe.debug.toolchain.1528201143" name="Atollic ARM Tools" superClass="com.atollic.truestudio.exe.debug.toolchain" unusedChildren="">
+							<option id="com.atollic.truestudio.general.runtimelib.1092420578.869015493" name="Runtime Library" superClass="com.atollic.truestudio.general.runtimelib.1092420578"/>
+							<option id="com.atollic.truestudio.toolchain_options.mcu.205441431.1107767143" name="Microcontroller" superClass="com.atollic.truestudio.toolchain_options.mcu.205441431"/>
+							<option id="com.atollic.truestudio.toolchain_options.vendor.2124217498.1565892754" name="Vendor name" superClass="com.atollic.truestudio.toolchain_options.vendor.2124217498"/>
+							<tool id="com.atollic.truestudio.exe.debug.toolchain.as.1225148839" name="Assembler" superClass="com.atollic.truestudio.exe.debug.toolchain.as.955850714">
+								<inputType id="com.atollic.truestudio.as.input.1781509201" name="Input" superClass="com.atollic.truestudio.as.input"/>
+							</tool>
+							<tool id="com.atollic.truestudio.exe.debug.toolchain.gcc.1712088121" name="C Compiler" superClass="com.atollic.truestudio.exe.debug.toolchain.gcc.359043188">
+								<inputType id="com.atollic.truestudio.gcc.input.1063268213" superClass="com.atollic.truestudio.gcc.input"/>
+							</tool>
+							<tool id="com.atollic.truestudio.exe.debug.toolchain.ld.1157022128" name="C Linker" superClass="com.atollic.truestudio.exe.debug.toolchain.ld.619913132"/>
+							<tool id="com.atollic.truestudio.exe.debug.toolchain.gpp.1399519664" name="C++ Compiler" superClass="com.atollic.truestudio.exe.debug.toolchain.gpp.962756888">
+								<inputType id="com.atollic.truestudio.gpp.input.1058721135" superClass="com.atollic.truestudio.gpp.input"/>
+							</tool>
+							<tool id="com.atollic.truestudio.exe.debug.toolchain.ldcc.1136721258" name="C++ Linker" superClass="com.atollic.truestudio.exe.debug.toolchain.ldcc.511051918"/>
+							<tool id="com.atollic.truestudio.ar.base.837338782" name="Archiver" superClass="com.atollic.truestudio.ar.base.1044331508"/>
+							<tool id="com.atollic.truestudio.exe.debug.toolchain.secoutput.255978382" name="Other" superClass="com.atollic.truestudio.exe.debug.toolchain.secoutput.553125063"/>
+						</toolChain>
+					</folderInfo>
 					<sourceEntries>
-						<entry flags="VALUE_WORKSPACE_PATH|RESOLVED" kind="sourcePath" name="Drivers"/>
-						<entry flags="VALUE_WORKSPACE_PATH|RESOLVED" kind="sourcePath" name="Inc"/>
-						<entry excluding="Command.cpp" flags="VALUE_WORKSPACE_PATH|RESOLVED" kind="sourcePath" name="Src"/>
-						<entry flags="VALUE_WORKSPACE_PATH|RESOLVED" kind="sourcePath" name="startup"/>
+						<entry excluding="Examples" flags="VALUE_WORKSPACE_PATH|RESOLVED" kind="sourcePath" name=""/>
 					</sourceEntries>
 				</configuration>
 			</storageModule>
@@ -903,6 +769,7 @@
 									<listOptionValue builtIn="false" value="&quot;${workspace_loc:/${ProjName}/SimpleMotion}&quot;"/>
 									<listOptionValue builtIn="false" value="&quot;${workspace_loc:/SimuCUBE-firmware-libs/SimpleMotion}&quot;"/>
 									<listOptionValue builtIn="false" value="../SimpleMotion"/>
+									<listOptionValue builtIn="false" value="&quot;${workspace_loc:/SimuCUBE-firmware-TrueStudio/Inc_simucube}&quot;"/>
 								</option>
 								<option id="com.atollic.truestudio.gcc.symbols.defined.1838889499" name="Defined symbols" superClass="com.atollic.truestudio.gcc.symbols.defined" useByScannerDiscovery="false"/>
 								<option id="com.atollic.truestudio.as.general.otherflags.314837146" name="Other options" superClass="com.atollic.truestudio.as.general.otherflags" useByScannerDiscovery="false" value="" valueType="string"/>
@@ -929,6 +796,7 @@
 									<listOptionValue builtIn="false" value="&quot;${workspace_loc:/SimuCUBE-firmware-libs/SimpleMotion}&quot;"/>
 									<listOptionValue builtIn="false" value="&quot;${workspace_loc:/SimuCUBE-firmware-libs/${BUILD_CONFIGURATION}}&quot;"/>
 									<listOptionValue builtIn="false" value="../SimpleMotion"/>
+									<listOptionValue builtIn="false" value="&quot;${workspace_loc:/SimuCUBE-firmware-TrueStudio/Inc_simucube}&quot;"/>
 								</option>
 								<option id="com.atollic.truestudio.gcc.symbols.defined.783825309" name="Defined symbols" superClass="com.atollic.truestudio.gcc.symbols.defined" useByScannerDiscovery="false" valueType="definedSymbols">
 									<listOptionValue builtIn="false" value="__weak=__attribute__((weak))"/>
@@ -990,6 +858,7 @@
 									<listOptionValue builtIn="false" value="../Drivers/STM32F4xx_HAL_Driver/Inc"/>
 									<listOptionValue builtIn="false" value="../Drivers/CMSIS/Device/ST/STM32F4xx/Include"/>
 									<listOptionValue builtIn="false" value="../Drivers/CMSIS/Include"/>
+									<listOptionValue builtIn="false" value="&quot;${workspace_loc:/SimuCUBE-firmware-TrueStudio/Inc_simucube}&quot;"/>
 								</option>
 								<option id="com.atollic.truestudio.gpp.warnings.fatal.1012976252" name="Abort compilation on first error" superClass="com.atollic.truestudio.gpp.warnings.fatal" useByScannerDiscovery="false" value="true" valueType="boolean"/>
 								<option id="com.atollic.truestudio.gpp.cppstandard.699995123" name="C++ standard" superClass="com.atollic.truestudio.gpp.cppstandard" useByScannerDiscovery="false" value="com.atollic.truestudio.gpp.cppstandard.gnupp0x" valueType="enumerated"/>
@@ -1028,56 +897,33 @@
 							<tool id="com.atollic.truestudio.ar.base.2117654053" name="Archiver" superClass="com.atollic.truestudio.ar.base"/>
 						</toolChain>
 					</folderInfo>
-					<folderInfo id="com.atollic.truestudio.exe.debug.1518366166.819059100.Drivers" name="/" resourcePath="Drivers">
-						<toolChain id="com.atollic.truestudio.exe.debug.toolchain.95905734" name="Atollic ARM Tools" superClass="com.atollic.truestudio.exe.debug.toolchain" unusedChildren="">
-							<option id="com.atollic.truestudio.general.runtimelib.936401667.584978631.1629770184" name="Runtime Library" superClass="com.atollic.truestudio.general.runtimelib.936401667"/>
-							<option id="com.atollic.truestudio.toolchain_options.mcu.2026743693.561641979.731155459" name="Microcontroller" superClass="com.atollic.truestudio.toolchain_options.mcu.2026743693"/>
-							<option id="com.atollic.truestudio.toolchain_options.vendor.1511712876.1409300988.979928777" name="Vendor name" superClass="com.atollic.truestudio.toolchain_options.vendor.1511712876"/>
-							<targetPlatform archList="all" binaryParser="org.eclipse.cdt.core.ELF" id="com.atollic.truestudio.exe.debug.toolchain.platform.1446015646" isAbstract="false" name="Debug platform" osList="all" superClass="com.atollic.truestudio.exe.debug.toolchain.platform"/>
-							<tool id="com.atollic.truestudio.exe.debug.toolchain.as.1441134890" name="Assembler" superClass="com.atollic.truestudio.exe.debug.toolchain.as.1600188048">
-								<inputType id="com.atollic.truestudio.as.input.1918201442" name="Input" superClass="com.atollic.truestudio.as.input"/>
-							</tool>
-							<tool id="com.atollic.truestudio.exe.debug.toolchain.gcc.697987210" name="C Compiler" superClass="com.atollic.truestudio.exe.debug.toolchain.gcc.2038117517">
-								<option id="com.atollic.truestudio.gcc.directories.select.198994935" name="Include path" superClass="com.atollic.truestudio.gcc.directories.select" useByScannerDiscovery="false" valueType="includePath">
-									<listOptionValue builtIn="false" value="&quot;${workspace_loc:/SimuCUBE-firmware-libs}&quot;"/>
-									<listOptionValue builtIn="false" value="../Inc"/>
-									<listOptionValue builtIn="false" value="../Drivers/STM32F4xx_HAL_Driver/Inc"/>
-									<listOptionValue builtIn="false" value="../Drivers/STM32F4xx_HAL_Driver/Inc/Legacy"/>
-									<listOptionValue builtIn="false" value="../Drivers/CMSIS/Device/ST/STM32F4xx/Include"/>
-									<listOptionValue builtIn="false" value="../Drivers/CMSIS/Include"/>
-									<listOptionValue builtIn="false" value="&quot;${workspace_loc:/SimuCUBE-firmware-libs/SimpleMotion}&quot;"/>
-									<listOptionValue builtIn="false" value="&quot;${workspace_loc:/SimuCUBE-firmware-libs/${BUILD_CONFIGURATION}}&quot;"/>
-									<listOptionValue builtIn="false" value="../SimpleMotion"/>
-								</option>
-								<inputType id="com.atollic.truestudio.gcc.input.843604879" superClass="com.atollic.truestudio.gcc.input"/>
-							</tool>
-							<tool id="com.atollic.truestudio.exe.debug.toolchain.ld.296523135" name="C Linker" superClass="com.atollic.truestudio.exe.debug.toolchain.ld.934486850"/>
-							<tool id="com.atollic.truestudio.exe.debug.toolchain.gpp.1454353987" name="C++ Compiler" superClass="com.atollic.truestudio.exe.debug.toolchain.gpp.1976371204">
-								<option id="com.atollic.truestudio.gpp.directories.select.321020339" name="Include path" superClass="com.atollic.truestudio.gpp.directories.select" useByScannerDiscovery="false" valueType="includePath">
-									<listOptionValue builtIn="false" value="&quot;${workspace_loc:/SimuCUBE-firmware-libs}&quot;"/>
-									<listOptionValue builtIn="false" value="../Inc"/>
-									<listOptionValue builtIn="false" value="../Drivers/STM32F4xx_HAL_Driver/Inc"/>
-									<listOptionValue builtIn="false" value="../Drivers/STM32F4xx_HAL_Driver/Inc/Legacy"/>
-									<listOptionValue builtIn="false" value="../Drivers/CMSIS/Device/ST/STM32F4xx/Include"/>
-									<listOptionValue builtIn="false" value="../Drivers/CMSIS/Include"/>
-								</option>
-								<inputType id="com.atollic.truestudio.gpp.input.2109747091" superClass="com.atollic.truestudio.gpp.input"/>
-							</tool>
-							<tool id="com.atollic.truestudio.exe.debug.toolchain.ldcc.1078060554" name="C++ Linker" superClass="com.atollic.truestudio.exe.debug.toolchain.ldcc.1619597261"/>
-							<tool id="com.atollic.truestudio.ar.base.582195449" name="Archiver" superClass="com.atollic.truestudio.ar.base.2117654053"/>
-							<tool id="com.atollic.truestudio.exe.debug.toolchain.secoutput.1634578848" name="Other" superClass="com.atollic.truestudio.exe.debug.toolchain.secoutput.386695802"/>
-						</toolChain>
-					</folderInfo>
 					<fileInfo id="com.atollic.truestudio.exe.debug.1518366166.819059100.nofile" name="" rcbsApplicability="disable" resourcePath="nofile" toolsToInvoke="com.atollic.truestudio.exe.debug.toolchain.gcc.114146449">
 						<tool id="com.atollic.truestudio.exe.debug.toolchain.gcc.114146449" name="C Compiler" superClass="com.atollic.truestudio.exe.debug.toolchain.gcc.2038117517">
 							<inputType id="com.atollic.truestudio.gcc.input.1736077311" superClass="com.atollic.truestudio.gcc.input"/>
 						</tool>
 					</fileInfo>
+					<folderInfo id="com.atollic.truestudio.exe.debug.1518366166.819059100.1421633734" name="/" resourcePath="Examples">
+						<toolChain id="com.atollic.truestudio.exe.debug.toolchain.1875288000" name="Atollic ARM Tools" superClass="com.atollic.truestudio.exe.debug.toolchain" unusedChildren="">
+							<option id="com.atollic.truestudio.general.runtimelib.491491918.1863359288" name="Runtime Library" superClass="com.atollic.truestudio.general.runtimelib.491491918"/>
+							<option id="com.atollic.truestudio.toolchain_options.mcu.1365931654.1719236523" name="Microcontroller" superClass="com.atollic.truestudio.toolchain_options.mcu.1365931654"/>
+							<option id="com.atollic.truestudio.toolchain_options.vendor.1626510277.1884181644" name="Vendor name" superClass="com.atollic.truestudio.toolchain_options.vendor.1626510277"/>
+							<tool id="com.atollic.truestudio.exe.debug.toolchain.as.1058032765" name="Assembler" superClass="com.atollic.truestudio.exe.debug.toolchain.as.1600188048">
+								<inputType id="com.atollic.truestudio.as.input.315644242" name="Input" superClass="com.atollic.truestudio.as.input"/>
+							</tool>
+							<tool id="com.atollic.truestudio.exe.debug.toolchain.gcc.116762285" name="C Compiler" superClass="com.atollic.truestudio.exe.debug.toolchain.gcc.2038117517">
+								<inputType id="com.atollic.truestudio.gcc.input.120168428" superClass="com.atollic.truestudio.gcc.input"/>
+							</tool>
+							<tool id="com.atollic.truestudio.exe.debug.toolchain.ld.1733840891" name="C Linker" superClass="com.atollic.truestudio.exe.debug.toolchain.ld.934486850"/>
+							<tool id="com.atollic.truestudio.exe.debug.toolchain.gpp.1598078079" name="C++ Compiler" superClass="com.atollic.truestudio.exe.debug.toolchain.gpp.1976371204">
+								<inputType id="com.atollic.truestudio.gpp.input.323486559" superClass="com.atollic.truestudio.gpp.input"/>
+							</tool>
+							<tool id="com.atollic.truestudio.exe.debug.toolchain.ldcc.1193558104" name="C++ Linker" superClass="com.atollic.truestudio.exe.debug.toolchain.ldcc.1619597261"/>
+							<tool id="com.atollic.truestudio.ar.base.293144854" name="Archiver" superClass="com.atollic.truestudio.ar.base.2117654053"/>
+							<tool id="com.atollic.truestudio.exe.debug.toolchain.secoutput.63053593" name="Other" superClass="com.atollic.truestudio.exe.debug.toolchain.secoutput.386695802"/>
+						</toolChain>
+					</folderInfo>
 					<sourceEntries>
-						<entry flags="VALUE_WORKSPACE_PATH|RESOLVED" kind="sourcePath" name="Drivers"/>
-						<entry flags="VALUE_WORKSPACE_PATH|RESOLVED" kind="sourcePath" name="Inc"/>
-						<entry flags="VALUE_WORKSPACE_PATH|RESOLVED" kind="sourcePath" name="Src"/>
-						<entry flags="VALUE_WORKSPACE_PATH|RESOLVED" kind="sourcePath" name="startup"/>
+						<entry excluding="Examples" flags="VALUE_WORKSPACE_PATH|RESOLVED" kind="sourcePath" name=""/>
 					</sourceEntries>
 				</configuration>
 			</storageModule>
@@ -1286,4 +1132,5 @@
 			</profile>
 		</scannerConfigBuildInfo>
 	</storageModule>
+	<storageModule moduleId="org.eclipse.cdt.internal.ui.text.commentOwnerProjectMappings"/>
 </cproject>

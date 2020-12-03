@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2016-2018 Granite Devices Oy
+ * Copyright (c) 2016-2020 Granite Devices Oy
  * ---------------------------------------------------------------------------
  * This file is made available under the terms of Granite Devices Software
  * End-User License Agreement, available at https://granitedevices.com/legal
@@ -15,54 +15,48 @@
  * ---------------------------------------------------------------------------
 */
 
-/**
-  ******************************************************************************
-  * File Name          : main.cpp
-  * Description        : Main program body
-  ******************************************************************************
-  *
-  ******************************************************************************
-  */
-/* Includes ------------------------------------------------------------------*/
-#include <eventlog.h>
+#include <eventLog.h>
 #include <main.h>
 #include "stm32f4xx_hal.h"
 #include "types.h"
 #include "malloc.h"
 #include "../SimpleMotion/simplemotion_private.h"
 #include "../SimpleMotion/simplemotion_defs.h"
+#include "simplemotioncomms.h"
 #include "cAnalogConfig.h"
 #include "config_comm_defines.h"
 #include "cHardwareConfig.h"
-#include "usbgamecontroller.h"
+#include "USBGameController.h"
 #include "usb_device.h"
 #include "usbd_customhid.h"
-#include "ffbengine.h"
-//#include "Command.h"
+#include "FfbEngine.h"
 #include "../SimpleMotion/devicedeployment.h"
 #include "stm32f4xx_hal_tim.h"
+#include "hw_functions.h"
 
+#include "stm32f407xx.h"
 
-/* Toggle general debug mode here! */
+/* Toggle general debug mode stuff here! */
 bool debugMode = true;
 bool debugMode2 = false;
-
+// uncomment to go to a mode that goes Operational that does not require servo drive.
+//#define NO_IONI_HID_DEVICE_MODE 1
 
 /* VERSION INFORMATION
- 	 change these for releases! */
-uint8_t majorVersion= 0;
-uint8_t minorVersion= 10;
-uint8_t buildVersion= 4;
+ 	 change these from fw_version.h for releases! */
+
+uint8_t majorVersion= FW_MAJOR_VERSION;
+uint8_t minorVersion= FW_MINOR_VERSION;
+uint8_t buildVersion= FW_BUILD_VERSION;
 
 /* Lowest compatible settings version this firmware is compatible with.
  * Write a converter function if the compatibility changes!
  */
 uint8_t lowestCompatibleFlashSettingsMajorVersion = 0;
-uint8_t lowestCompatibleFlashSettingsMinorVersion = 8;
+uint8_t lowestCompatibleFlashSettingsMinorVersion = 11;
 
 /* Ioni Firmware version requirement */
-uint16_t ioniFirmwareMinimumVersion = 10707;
-
+uint16_t ioniFirmwareMinimumVersion = IONI_FW_VER;
 
 
 /* Init version data table.
@@ -79,30 +73,29 @@ uint8_t IoniDrcFile[16384];
 
 // HAL (init) variables
 ADC_HandleTypeDef hadc1;
-ADC_HandleTypeDef hadc2;
 DMA_HandleTypeDef hdma_adc1;
-DMA_HandleTypeDef hdma_adc2;
 UART_HandleTypeDef huart1;
+UART_HandleTypeDef huart2;
 UART_HandleTypeDef huart3;
+UART_HandleTypeDef huart4;
+UART_HandleTypeDef *debugHuart = nullptr;
+DMA_HandleTypeDef hdma_usart1_rx;
 DMA_HandleTypeDef hdma_usart3_rx;
 TIM_HandleTypeDef htim2_usbwaitdelay;
 TIM_HandleTypeDef htim3_watchdogwaitdelay;
 TIM_HandleTypeDef htim4_effecttimer;		//2500 Hz effect operation
 TIM_HandleTypeDef htim5_usbsuspenddelay;		// used to suspend usb comms on SUSPEND
 TIM_HandleTypeDef htim6_1MhzEffectClock;
+TIM_HandleTypeDef htim7_250msledclock;
 
-bool FFB2500HzWait;
-s32 encoderCounter=0;
 USBGameController joystick;
 uint64_t millis=0;
 uint32_t globaldebugvalue2=0;
 
 uint64_t timervalue=0;
 
-
 // Buffer to store all ADC input values via DMA
 uint16_t ADC1_Buffer[ADC1_BUFFER_LENGTH];
-
 
 // SimuCUBE Event Log system
 eventLog simucubelog;
@@ -118,16 +111,27 @@ eventLog simucubelog;
   #define PUTCHAR_PROTOTYPE int fputc(int ch, FILE *f)
 #endif /* __GNUC__ */
 
-
 // blocking 1us delay, if required.
-void delay_us(uint32_t delay_us) {
+void delay_us(uint32_t delay) {
 	volatile uint32_t counter = 0;
-	counter = (delay_us * (SystemCoreClock / 1000000U));
+	counter = (delay * (SystemCoreClock / 1000000U));
 	while(counter != 0U)
 	{
 		counter--;
 	}
 }
+
+#ifdef __cplusplus
+extern "C" {
+#endif
+// blocking 1us delay, if required.
+void delay_us_c(uint32_t delay) {
+	delay_us(delay);
+}
+#ifdef __cplusplus
+}
+#endif
+
 
 
 
@@ -147,25 +151,13 @@ extern void MX_USART3_UART_Init(void);
 #ifdef __cplusplus
 }
 #endif
-static void MX_GPIO_Init(void);
 static void MX_DMA_Init(void);
-static void MX_ADC1_Init(void);
 
-static void MX_USART1_UART_Init(void);
-static void MX_I2C1_Init(void);
 static void MX_TIM2_Init(void);
-
 static void MX_TIM4_Init(void);
 static void MX_TIM5_Init(void);
 static void MX_TIM6_Init(void);
-
-
-
-
-
-
-
-
+static void MX_TIM7_Init(void);
 
 /* System status variables.
  * CurrentSystemStatus is the general state of the system, used directly in the state machine.
@@ -180,12 +172,12 @@ volatile SystemStatus nextSystemStatus=BeforeInit;
 volatile SystemStatus previousSystemStatus = Internal_ForceMyEnumIntSize;
 volatile SystemStatus previousSystemStatus2 = Internal_ForceMyEnumIntSize;
 
-
 // wrappers to C+ code from STM HAL C code
 #include "wrappers.h"
 
 
-
+uint32_t bleCycles = 0;      // number of cycles last used to update bluetooth, undefined if there is no debugger
+uint32_t joystickCycles = 0; // number of cycles last used to udpate "joystick" (the usb hid), undefined without debugger
 
 /* HID report handling function
  * return false, if such a report was received
@@ -195,21 +187,42 @@ volatile SystemStatus previousSystemStatus2 = Internal_ForceMyEnumIntSize;
  * state machine.
  */
 bool handleHidReports() {
-	if(!joystick.USBReportsEnabled) {
-		// can't risk spamming any answers to usb output buffer.
-		return true;
+	auto start = DWT->CYCCNT;
+
+	if(joystick.gFFBDevice.bledetected==1) {
+
+		// BLE Connection loop, must be run often. The connected button plate sends data every 7.5ms.
+		// Internally the loop might advance by receiving a new packet and processing it.
+		joystick.gFFBDevice.BLEConn.loop();
+
+		// Create input device configuration if the BLE device has new configuration data
+		if (joystick.gFFBDevice.BLEConn.newInputConfiguration()) {
+			joystick.gFFBDevice.inputDeviceList.setConfiguration(joystick.gFFBDevice.BLEConn.getInputConfiguration()); //
+			// new input configuration always means that a wireless wheel was connected.
+			SMPlaySound(Connected);
+			joystick.gFFBDevice.wirelessTorqueOffEvent=0;
+			joystick.gFFBDevice.setSWWIdleDisconnectStatus(0);
+			// if previous wheel had torque off button and it was off, need to reset this
+			// too, and it will be read from device at first torque update cycle.
+			joystick.gFFBDevice.wirelessTorqueOffButton=0;
+		}
+
+		// handle disconnected or low battery events
+		joystick.gFFBDevice.handleWirelessEvents();
 	}
-    // handle HID reports
-	if(joystick.getPendingReceivedReportCount())
-	{
-		HID_REPORT recv_report=joystick.getReceivedReport();
-       	return joystick.handleReceivedHIDReport(recv_report);
-	}
-	return true;
+
+	bleCycles = DWT->CYCCNT - start;
+
+	start = DWT->CYCCNT;
+
+	// read the oldest report and process it (for example configure effects)
+	bool returnvalue = joystick.tryConsumeReceivedReport();
+
+	joystickCycles = DWT->CYCCNT - start;
+
+	return returnvalue;
 }
 /* End HID report handling function */
-
-
 
 
 
@@ -225,19 +238,25 @@ extern USBD_HandleTypeDef hUsbDeviceFS;
 #define RESET_TO_BOOTLOADER_MAGIC_CODE 0xDEADBEEF
 #define BOOTLOADER_STACK_POINTER       0x1FFF0000
 
-static void simucube_bootloader(void) {
+void simucube_bootloader(uint32_t magic_code) {
+	volatile uint32_t code = magic_code;
+	if(code==RESET_TO_BOOTLOADER_MAGIC_CODE) {
+		*((unsigned long *)0x2001FFF0) = RESET_TO_BOOTLOADER_MAGIC_CODE;
+	} else {
+		*((unsigned long *)0x2001FFF0) = 0xb007b007;
+	}
 	//dfu_reset_to_bootloader_magic = RESET_TO_BOOTLOADER_MAGIC_CODE; // Write a scratch location at end of RAM (or wherever)
-	*((unsigned long *)0x2001FFF0) = RESET_TO_BOOTLOADER_MAGIC_CODE;
+	*((unsigned long *)0x2001FFF0) = code;  // RESET_TO_BOOTLOADER_MAGIC_CODE = bootloader, others = just reboot
 	HAL_ADC_Stop_DMA(&hadc1);
 	HAL_UART_DMAStop(&huart3);
-	/*TIM_HandleTypeDef htim2_usbwaitdelay;
-	TIM_HandleTypeDef htim3_watchdogwaitdelay;
-	TIM_HandleTypeDef htim4_effecttimer;*/
+	HAL_UART_DMAStop(&huart1);
+	HAL_UART_DMAStop(&huart2);
 	HAL_TIM_Base_Stop_IT(&htim2_usbwaitdelay);
 	HAL_TIM_Base_Stop_IT(&htim3_watchdogwaitdelay);
 	HAL_TIM_Base_Stop_IT(&htim4_effecttimer);
 	HAL_TIM_Base_Stop_IT(&htim5_usbsuspenddelay);
 	HAL_TIM_Base_Stop(&htim6_1MhzEffectClock);
+	HAL_TIM_Base_Stop_IT(&htim7_250msledclock);
 	USBD_Stop(&hUsbDeviceFS);
 	USBD_DeInit(&hUsbDeviceFS);
 	HAL_RCC_DeInit();
@@ -245,9 +264,7 @@ static void simucube_bootloader(void) {
     SysTick->CTRL = 0;
     SysTick->LOAD = 0;
     SysTick->VAL = 0;
-    //__disable_irq();
     __HAL_SYSCFG_REMAPMEMORY_SYSTEMFLASH();
-	//__set_MSP(ADDR_FLASH_SECTOR_4);
 	NVIC_SystemReset();
 }
 /* END BOOTLOADER JUMP FUNCTION */
@@ -256,32 +273,8 @@ static void simucube_bootloader(void) {
 
 
 /* Reading of Hardware Version ID */
-void readHWVersion() {
-	uint8_t id = 0;
-	if(HAL_GPIO_ReadPin(IDSEL_0_GPIO_Port,IDSEL_0_Pin)==GPIO_PIN_RESET) {
-		id=id+1;
-	}
-	if(HAL_GPIO_ReadPin(IDSEL_1_GPIO_Port,IDSEL_1_Pin)==GPIO_PIN_RESET) {
-		id=id+2;
-	}
-	if(HAL_GPIO_ReadPin(IDSEL_2_GPIO_Port,IDSEL_2_Pin)==GPIO_PIN_RESET) {
-		id=id+4;
-	}
-	switch(id) {
-	case 0:
-		joystick.gFFBDevice.scHWVersion = hwv1;
-		break;
-	case 1:
-		joystick.gFFBDevice.scHWVersion = hwv2;
-		break;
-	default:
-		joystick.gFFBDevice.scHWVersion = hwunknown;
-		break;
-	}
-}
+void readHWVersion();
 /* End Reading of Hardware Version ID */
-
-
 
 
 /* The Main function */
@@ -290,101 +283,97 @@ void readHWVersion() {
 int main(void)
 {
 	joystick.gFFBDevice.waitLastSimpleMotion = false;
-	/* HAL initializations */
-
-	/* Reset of all peripherals, Initializes the Flash interface and the Systick. */
+	// HAL initializations
+	// Reset of all peripherals, Initializes the Flash interface and the Systick.
 	HAL_Init();
 
-	/* Configure the system clock */
+	// Configure the system clock
 	SystemClock_Config();
-	/* Initialize all configured peripherals */
+	// Initialize all configured peripherals
 	MX_GPIO_Init();
 	SMPortSetMaster(false);
 	MX_DMA_Init();
 	MX_ADC1_Init();
-	//MX_ADC2_Init();
 	MX_USART3_UART_Init();
-	MX_USART1_UART_Init();
-	MX_I2C1_Init();
 
-#if 0
-	while(true) {
-		asm("nop");
-	}
-#endif
+	// sets start time for debug log time stamps
+	simucubelog.resetLogStartTime();
 
+	// test and init ble and debug uarts
+	testAndInitBLE();
 
-	// start FFB 2500Hz timer
-	FFB2500HzWait = false;
+	// various hardware tests
+	int hw_result = init_test();
+
 	MX_TIM4_Init();
 	MX_TIM5_Init();
 	MX_TIM6_Init();
+	MX_TIM7_Init();
 	HAL_TIM_Base_Start_IT(&htim4_effecttimer);
 	HAL_TIM_Base_Start(&htim6_1MhzEffectClock);
-	//HAL_TIM_Base_Start(&htim4_effecttimer);
-	//HAL_TIM_Base_Start_IT(&htim5_usbsuspenddelay);
-	//while(1);
+	HAL_TIM_Base_Start_IT(&htim7_250msledclock);
 
-	/* Initialize PWM&DIR outputs to LOW, so that "default" Ioni configs, that take
-	 * those kind of signals, don't try to interpret anything....
-	 */
-	HAL_GPIO_WritePin(STM_IONI_PWM_OUT_HSIN2_GPIO_Port, STM_IONI_PWM_OUT_HSIN2_Pin, GPIO_PIN_RESET); // sets pin low
-	HAL_GPIO_WritePin(STM_IONI_DIR_OUT_HSIN1_GPIO_Port, STM_IONI_DIR_OUT_HSIN1_Pin, GPIO_PIN_RESET); // sets pin low
+	// Initialize PWM&DIR outputs to LOW, so that "default" Ioni configs on SC1, that take
+	// those kind of signals, don't try to interpret anything....
+	setPWMDIRPinslow();
 
 	// start all simucube ADC DMA traffics
 	HAL_ADC_Start_DMA(&hadc1, (uint32_t*)ADC1_Buffer, ADC1_BUFFER_LENGTH);
-	//HAL_ADC_Start_DMA(&hadc2, (uint32_t*)ADC2_Buffer, ADC2_BUFFER_LENGTH);
 
 	// start simplemotion SMBUS reception
 	HAL_UART_Receive_DMA(&huart3,rxBuffer, RXBUFSIZE);
-	//joystick.gFFBDevice.mSMBusHandle = smOpenBus("MBEDSERIAL");
 
-	MX_USB_DEVICE_Init();
-	//  read hw version here
-	readHWVersion();
+	readHwVersion();
+
+	if(debugMode) printf("------- SimuCUBE %d.%d.%d BOOT -------\r\n",majorVersion,minorVersion,buildVersion);
+	if(debugMode) printf("HAL initializations complete.\r\n");
+	if(hw_result==0) {
+		printf("invalid hardware for firmware.");
+		simucube_bootloader(RESET_TO_BOOTLOADER_MAGIC_CODE);
+		while(1) {
+			handleHidReports();
+		}
+	}
+
+
 
 #if 0
-	char data[11];
-	for(int i=0; i<11; i++) {
-		data[i]=i;
-	}
-	volatile HAL_StatusTypeDef status;
-
-	for(int i=0; i<10; i++) {
-		status= HAL_UART_Transmit_IT(&huart3, (uint8_t*)data[i], 1);
-		HAL_Delay(10);
-	}
-	while(1);
+	// SIMPLEMOTION DEBUG TOGGLE
+	if(debugMode) smSetDebugOutput(SMDebugMid,stdout); //prints lots of SM debugging, probably causes printf latency issues
 #endif
 
-	if(debugMode) printf("------- SimuCUBE BOOT -------\r\n");
-	if(debugMode) printf("HAL initializations complete.\r\n");
+
 	simucubelog.addEventParam(SimuCUBEBoot, majorVersion, true);
 	simucubelog.addEventParam(SimuCUBEBoot, minorVersion, true);
 	simucubelog.addEventParam(SimuCUBEBoot, buildVersion, true);
 
-
-
-	/* init firmware version table  */
+	// init firmware version table
 	firmwareVersion[majorVersionIdx] = majorVersion;
 	firmwareVersion[minorVersionIdx] = minorVersion;
 	firmwareVersion[buildVersionIdx] = buildVersion;
 
-	/* state machine startup initializations */
-	if(debugMode) printf("Trying to load config from flash..\r\n");
 
-	// load settings from flash
+
+	// state machine startup initializations
+
+	if(debugMode) printf("Trying to load config from flash..\r\n");
 	bool loadflash = joystick.gFFBDevice.loadConfigsFromFlash();
 	if(debugMode) printf("Done trying to load config from flash\r\n");
 	simucubelog.addEvent(loadedFlash, true);
 
+	// initializes serial port and simplemotion
+	preDriveInit();
 
-	HAL_GPIO_WritePin(LED3_OUT_GPIO_Port, LED3_OUT_Pin, GPIO_PIN_SET);
+	// Initializes the USB.
+	MX_USB_DEVICE_Init();
 
+
+	joystick.gFFBDevice.setEndstopLed(true);
 	if(!loadflash) {
-		if(debugMode) printf("flash data was for old version. Saving default configs to flash!\r\n");
-		simucubelog.addEvent(flashDataOld, true);
+		if(debugMode) printf("flash data was for old version or invalid CRC32. Saving default configs to flash!\r\n");
+		simucubelog.addEventParam(flashDataInvalid, 0);
 		joystick.gFFBDevice.SetDefault(); // this also sets initialconfigdone = false
+
 		bool saveflash = joystick.gFFBDevice.saveConfigsToFlash();
 		if(!saveflash) currentSystemStatus = FlashFault;
 		if(debugMode) printf("going to initialconfignotdone.\r\n");
@@ -399,60 +388,64 @@ int main(void)
 		}
 
 	} else {
+		// flash loading was successfull
+		// if default setting were possibly changed due to fw version update
 		if(joystick.gFFBDevice.rewriteDefault == true) {
 			if(debugMode) printf("rewriting profile 0\r\n");
 			simucubelog.addEvent(rewriteDefaultProfile, true);
 			// need to rewrite default profile
 			joystick.gFFBDevice.mConfig.setReadOnlyDefaultProfileValues();
-			//disableSMWatchdog();
 			if(!joystick.gFFBDevice.saveConfigsToFlash()) {
-				// failure -> currentSystemStatus = FlashFault;
-				//enableSMWatchdog();
 				currentSystemStatus = FlashFault;
 				if(debugMode)printf("rewriting profile 0 failed\r\n");
 			}
 			joystick.gFFBDevice.unsavedSettings = 0;
-			//enableSMWatchdog();
 		}
 
-		if(joystick.gFFBDevice.mConfig.hardwareConfig.mInitialConfigDone == InitialConfigDone)  {
+		// check if there is possibility that PC tool has sent bogus data for unused profile parameters
+		if(joystick.gFFBDevice.checkIfPre012Data()) {
+			joystick.gFFBDevice.initUninitializedProfileParametersPre012();
+		}
+
+		// check if flash had <1.0.0 flash data
+		if(joystick.gFFBDevice.checkIfPre10000Data()) {
+			joystick.gFFBDevice.resetParametersPre10000();
+		}
+
+		// convert "connect to any wheel" setting from 1.0.22/23 to connec to paired wheels
+		joystick.gFFBDevice.adjustAnyWheelConnection();
+
+		if(joystick.gFFBDevice.mConfig.hardwareConfig.hwSettings[addrVariousSettingsBits1]&(1<<bitInitialConfigDone))  {
 			if(debugMode) printf("Initial configuration has been performed. Initializing drive.\r\n");
 			simucubelog.addEvent(EventInitialConfigDone, true);
 			currentSystemStatus = DriveInit;
 		} else {
+
 			currentSystemStatus = SystemNotConfigured;
 			if(debugMode) printf("Initial configuration has not been performed. Drive not operational.\r\n");
 			simucubelog.addEvent(EventInitialConfigNotDone, true);
 			// connect drive also, so that it will automatically update firmware on it.
 			if(!InitializeDrive(true)) {
-				// go to IoniFWUpgradeError
 				currentSystemStatus = IoniFWUpgradeError;
 			} else {
+				SetTorque(0, 0);
 				currentSystemStatus = SystemNotConfigured;
 			}
-			//SMPortSetMaster(false);
-			//disableSMWatchdog;
+
 		}
 	}
+
+	joystick.gFFBDevice.setBLEAutoConnectMode();
 
 	joystick.gFFBDevice.IRFFBModeEnabled = false;
 
 	int reconnectCounter = 0;
 
-
-	/* end state machine startup initializations */
-
-
-
-	// variable needed for steering calculation
-	uint16_t steeringValue=0;// = 32768;
+	// end state machine startup initializations
 
 
 	// for cleanup of debug printing:
-	//SystemStatus previousSystemStatus = Internal_ForceMyEnumIntSize;
 	bool statusChanged = true;
-
-
 
 	timervalue=millis;
 
@@ -472,6 +465,7 @@ int main(void)
 				if(statusChanged) {
 					disableSMWatchdog();
 				}
+				configureSystem();
 				handleHidReports();
 				break;
 
@@ -495,44 +489,48 @@ int main(void)
 			{
 				if(debugMode && statusChanged) printf("state: DriveInitSuccess \r\n");
 				if(statusChanged) simucubelog.addEvent(StateDriveInitSuccess);
-				enableSMWatchdog();
 				bool hidcommand = handleHidReports();
 				if(!hidcommand) break; // got a hid report already telling to do something else
-				if(joystick.gFFBDevice.mConfig.hardwareConfig.mIndexingMode == indexPointIndexing) {
+
+				if(joystick.gFFBDevice.mConfig.hardwareConfig.hwSettings[addrIndexingMode] == indexPointIndexing) {
 					currentSystemStatus = WaitFindingIndexPoint;
 				} else {
-					if(joystick.gFFBDevice.mConfig.hardwareConfig.mInitialConfigDone != InitialConfigDone) {
+					if(!(joystick.gFFBDevice.mConfig.hardwareConfig.hwSettings[addrVariousSettingsBits1]&(1<<bitInitialConfigDone))) {
 						currentSystemStatus = DriveInitSuccessPause;
 					} else {
-						currentSystemStatus = BeforeOperational;
+						currentSystemStatus = SetBaudrateForOperational;
 					}
 				}
+
 				break;
 			}
 
 			case WaitFindingIndexPoint:
 			{
-				joystick.gFFBDevice.indexpointfound = 0;
-				if(debugMode && statusChanged) printf("state: Waiting for index point \r\n");
+				joystick.gFFBDevice.setIndexpointFound(false);
+				if(debugMode && statusChanged) printf("state: Waiting for index point\r\n");
 				if(statusChanged) simucubelog.addEvent(StateWaitingIndex);
 				int indexpoint = 0;
 				bool status = WaitForIndexPulse(indexpoint);
 				if(!status) {
 					// failure,or was told to go elsewhere
+					if(debugMode) printf("cancelled finding index point\r\n");
 					break;
 				}
-				joystick.gFFBDevice.indexpointfound = 1;
-				volatile int p1,p2;
-				smint32 positionFB=0;
-				p1=SetTorque(0);//call this twice to have 16 bit differential encoder unwrapper initialized
-				p2=SetTorque(0);
-				smRead1Parameter(joystick.gFFBDevice.mSMBusHandle, 1, SMP_ACTUAL_POSITION_FB_NEVER_RESETTING, &positionFB);//read 32 bit position
-				joystick.gFFBDevice.indexPointEncPos = positionFB;
-				resetPositionCountAt(positionFB);
-				//resetPositionCountAt(0);
 
-				if(joystick.gFFBDevice.mConfig.hardwareConfig.mInitialConfigDone == InitialConfigDone) {
-					currentSystemStatus = BeforeOperational;
+				SetTorque(0, 0);
+
+				joystick.gFFBDevice.setIndexpointFound(true);
+				SM_STATUS indexstatus = smSetParameter(joystick.gFFBDevice.mSMBusHandle, 1, SMP_SIMUCUBE_WHEEL_CENTER_OFFSET, -1);
+				joystick.gFFBDevice.angle.reset();
+
+				// early init of angle mode here
+				joystick.gFFBDevice.angle.setIndexpointOffset(joystick.gFFBDevice.mConfig.hardwareConfig.hwSettings[addrEncoderOffset]);
+				joystick.gFFBDevice.angle.setCenteringMode(joystick.gFFBDevice.mConfig.hardwareConfig.hwSettings[addrIndexingMode]);
+
+				joystick.gFFBDevice.CalcTorqueCommand(); // forces reset of angle calculations
+				if(joystick.gFFBDevice.mConfig.hardwareConfig.hwSettings[addrVariousSettingsBits1]&(1<<bitInitialConfigDone)) {
+					currentSystemStatus = SetBaudrateForOperational;
 				} else {
 					currentSystemStatus = DriveInitSuccessPause;
 				}
@@ -541,39 +539,41 @@ int main(void)
 			case DriveInitSuccessPause:
 			{
 				if(debugMode && statusChanged) printf("state: DriveInitSuccessPause \r\n");
-				if(statusChanged) simucubelog.addEvent(StateDriveInitSuccessPause);
+				if(statusChanged) {
+					simucubelog.addEvent(StateDriveInitSuccessPause);
+				}
 				handleHidReports();
-				SetTorque(0); // to keep watchdog happy
+				int32_t positionFB = 0;
+				// do something to keep possible watchdog happy
+				smRead1Parameter(joystick.gFFBDevice.mSMBusHandle, 1, SMP_ACTUAL_POSITION_FB_NEVER_RESETTING, &positionFB);//read 32 bit position // to keep watchdog happy
 				HAL_Delay(1); // to not overflow IONI simplemotion task.
 				break;
 			}
+
+			case SetBaudrateForOperational:
+			{
+				if(debugMode && statusChanged) printf("state: setBaudrateForOperational \r\n");
+				if(statusChanged) simucubelog.addEvent(StateSetBaudrate);
+                enableSMWatchdog();
+				initSMBusBaudrate(true);
+				joystick.gFFBDevice.driveParamTracker.updateParameters(true);
+				initFastUpdateCycleMode();
+				currentSystemStatus=BeforeOperational;
+				break;
+			}
+
 			case BeforeOperational:
+			{
 				if(debugMode && statusChanged) printf("state: BeforeOperational \r\n");
 				if(statusChanged) simucubelog.addEvent(StateBeforeOperational);
-				//handleHidReports();
 				joystick.gFFBDevice.initVariables(); // this needs to be done to get from encoder resolution to real angle
 
-				// set ioni filters
-				writeChangedIoniParameters(true);
-				if(!joystick.gFFBDevice.readEncoder32bit()) {
-					if(debugMode) {
-						printf("couldn't read 32bit enc pos\r\n");
-					}
-				}
+				// set only drive parameters according to profile, and only if they are changed
+				joystick.gFFBDevice.driveParamTracker.updateParameters(false);
+
 				currentSystemStatus = Operational;
 				break;
-
-
-
-
-
-
-
-
-
-
-
-
+			}
 
 			/* main operating state! */
 			case Operational:
@@ -581,26 +581,39 @@ int main(void)
 				if(debugMode && statusChanged){
 					printf("state: Operational \r\n");
 				}
-				if(joystick.gFFBDevice.mConfig.hardwareConfig.mInitialConfigDone!=InitialConfigDone) {
+				if(statusChanged) {
+					simucubelog.addEvent(StateOperational);
+				}
+
+				if(!(joystick.gFFBDevice.mConfig.hardwareConfig.hwSettings[addrVariousSettingsBits1]&(1<<bitInitialConfigDone))) {
 					currentSystemStatus = SystemNotConfigured;
 					break;
 				}
-				if(statusChanged) {
-					simucubelog.addEvent(StateOperational);
-					joystick.gFFBDevice.prevEffectCalcTime = -1;
+
+				// CalcTorqueCommand currently waits the time we need to sleep so while this gets called
+				// very often it will in practice return
+
+				bool newCalculation = joystick.gFFBDevice.CalcTorqueCommand(); //reads encoder counter too
+				if (newCalculation) {
+					joystick.update(joystick.gFFBDevice.usb_steering_angle()); // updates also everything else (buttons)
+				} else {
+					joystick.update_unchanged_steering(); // not sure if we need these for too long
 				}
-				bool newCalculation = joystick.gFFBDevice.CalcTorqueCommand(&encoderCounter); //reads encoder counter too
-				if(newCalculation) {
-					steeringValue=joystick.gFFBDevice.calcSteeringAngle(encoderCounter);
-				}
-				joystick.update(steeringValue); // updates also everything else (buttons)
+
 				handleHidReports();
+
 				break;
 			}
 			/* end main operating state! */
 
-
-
+			case testMode:
+			{
+				if(debugMode && statusChanged){
+					printf("state: testMode \r\n");
+				}
+				// testmode does nothing on simucube 1
+				break;
+			}
 
 
 
@@ -624,14 +637,20 @@ int main(void)
 					break;
 				}
 				joystick.gFFBDevice.unsavedSettings = 0;
-				enableSMWatchdog();
+
 
 				// save also flags that are set to drive.
+				SetTorque(0, 0);
 				resetMaxMMC();
 				saveDriveCfg();
+				joystick.gFFBDevice.torqueOffSavingDelay=1;
+				joystick.gFFBDevice.torqueOffSavingDelayStart=millis;
+
+				enableSMWatchdog();
 				setCurrentProfileMMC();
 
-				if(!joystick.gFFBDevice.readEncoder32bit()) {
+				// todo: check for sc1
+				if(!joystick.gFFBDevice.angle.readStartPosition()) {
 					if(debugMode) {
 						printf("couldn't read 32bit enc pos\r\n");
 					}
@@ -644,21 +663,7 @@ int main(void)
 			case goFreshStart:
 				if(debugMode && statusChanged) printf("state: goFreshStart \r\n");
 				if(statusChanged) simucubelog.addEvent(StateFreshStart);
-				// todo:
-				// disable drive
-				// reset all configs to default (done)
-				// include ioni reset?
-				joystick.gFFBDevice.SetDefault();
-				joystick.gFFBDevice.mConfig.hardwareConfig.mInitialConfigDone = InitialConfigNotDone;
-				if(!joystick.gFFBDevice.saveConfigsToFlash()) {
-					currentSystemStatus = FlashFault;
-				} else {
-					// reboot MCU here
-					NVIC_SystemReset();
-					while(1) {
-						asm("nop");
-					}
-				}
+				resetSettings();
 				break;
 
 			case FlashFault:
@@ -680,14 +685,14 @@ int main(void)
 				// have gotten a command to release smbus
 				if(enableSMWatchdog()) {
 					resetMaxMMC();
-
-					//disableSMWatchdog();
+					initSMBusBaudrate(false);
 				} // do not try to access smbus if simple watchdog command failed.
 				else {
-					initDefaultSMBusBaudrate(true);
+					initSMBusBaudrate(false);
 				}
 				SMPortSetMaster(false);
 				currentSystemStatus = SMBusReleased;
+				joystick.gFFBDevice.setSmReleased(true);
 				break;
 
 			case SMBusReleased:
@@ -708,23 +713,27 @@ int main(void)
 				if(reconnectCounter>4) {
 					simucubelog.addEvent(StateRegainSMFailedTimeOut);
 					SMPortSetMaster(false);
-					currentSystemStatus=DriveConnectionError;
+					currentSystemStatus = DriveConnectionError;
+					break;
 				}
 				if(millis > (timervalue+3000)) {
 					reconnectCounter++;
 					SMPortSetMaster(true);
-					int status = initSMBusBaudrate();
+					int status = initSMBusBaudrate(false);
 					if(status == -1) {
 						if(debugMode) printf("couldn't initialize smbus baud rate!\r\n");
 						simucubelog.addEvent(StateRegainSMFailed);
 						SMPortSetMaster(false);
-						timervalue=millis;
+						timervalue = millis;
 						break;
 					}
-					//joystick.gFFBDevice.readIoniParameters();
-					//joystick.gFFBDevice.writeChangedIoniParameters(true);
+					restartSMDrive();
+					if(!readDriveParams()) {
+						if(debugMode) printf("couldn't read some parameters\r\n");
+						break; // something not working
+					}
 
-					if(joystick.gFFBDevice.mConfig.hardwareConfig.mInitialConfigDone == InitialConfigNotDone) {
+					if((joystick.gFFBDevice.mConfig.hardwareConfig.hwSettings[addrVariousSettingsBits1]&(1<<bitInitialConfigDone))==0) {
 						if(!InitializeDrive(true)) { // to make sure still have correct FW version
 							// go to IoniFWUpgradeError?
 							currentSystemStatus = SystemNotConfigured;
@@ -733,12 +742,27 @@ int main(void)
 						currentSystemStatus = SystemNotConfigured;
 						break;
 					} else {
-						enableSMWatchdog();
-						currentSystemStatus = nextSystemStatus;
 						if(!InitializeDrive()) {
 							currentSystemStatus = DriveConnectionError;
 							break;
 						}
+						initFastUpdateCycleMode();
+
+						const auto resp = SetTorque(0, 0);
+						joystick.gFFBDevice.angle.reset();
+
+						// do this only, if there is a chance that system will go operational.
+						if((joystick.gFFBDevice.mConfig.hardwareConfig.hwSettings[addrVariousSettingsBits1]&(1<<bitInitialConfigDone)) && nextSystemStatus==Operational) {
+							// go to safe mode
+							joystick.gFFBDevice.currentprofileindex=0;
+							enableSMWatchdog();
+							nextSystemStatus=SetBaudrateForOperational;
+							joystick.gFFBDevice.driveParamTracker.updateParameters(true);
+							simucubelog.addEventParam(Command_disableForces,1);
+							joystick.gFFBDevice.forcesEnabled = 0;
+							joystick.gFFBDevice.forcesDisabledForSafety=1;
+						}
+						break;
 					}
 					timervalue=millis;
 				}
@@ -759,9 +783,9 @@ int main(void)
 					// try to re-init comms every 10000 ms
 					if(millis > (timervalue+10000)) {
 						SMPortSetMaster(true);
-						if(initSMBusBaudrate()==0) {
+						if(initSMBusBaudrate(false)==0) {
 							//success. Return to the state where system was last.
-							if(joystick.gFFBDevice.mConfig.hardwareConfig.mInitialConfigDone==InitialConfigDone) {
+							if(joystick.gFFBDevice.mConfig.hardwareConfig.hwSettings[addrVariousSettingsBits1]&(1<<bitInitialConfigDone)) {
 								currentSystemStatus = DriveInit;
 							} else {
 								currentSystemStatus = SystemNotConfigured;
@@ -809,32 +833,15 @@ int main(void)
 				disableSMWatchdog();
 				if(debugMode && statusChanged) printf("state: ApplyIoniDrcData \r\n");
 				if(statusChanged) simucubelog.addEvent(StateApplyDRCData);
-				int skippedcount = 0;
-				int errorcount = 0;
-				unsigned int mode;
-				mode = (CONFIGMODE_DISABLE_DURING_CONFIG | CONFIGMODE_CLEAR_FAULTS_AFTER_CONFIG);
 
-				printf("\r\n--\r\n");
-				for(int i = 0; i<joystick.gFFBDevice.IoniDrcDataReceivedBytes; i++) {
-					printf("%c",IoniDrcFile[i]);
-				}
-				printf("--\r\n");
-				LoadConfigurationStatus status = smLoadConfigurationFromBuffer(joystick.gFFBDevice.mSMBusHandle, 1, &IoniDrcFile[0], joystick.gFFBDevice.IoniDrcDataReceivedBytes, mode, &skippedcount, &errorcount);
-				// todo: error checking?
-				if(status != CFGComplete) {
-					// failed?
-					if(debugMode && statusChanged) printf("ApplyIoniDrcData ERRORED\r\n");
-					simucubelog.addEvent(ApplyDriveDRCError, (uint32_t)status);
-				} else {
-					if(debugMode && statusChanged) printf("ApplyIoniDrcData SUCCESS\r\n");
-					simucubelog.addEvent(ApplyDriveDRCSuccess);
-				}
+				SMApplyDRCDataFromBuffer(&IoniDrcFile[0], joystick.gFFBDevice.IoniDrcDataReceivedBytes);
+
 				enableSMWatchdog();
 
 				// after applying DRC, read MMC and other important parameters
 				smint32 res;
 				smRead1Parameter(joystick.gFFBDevice.mSMBusHandle, 1, SMP_TORQUELIMIT_CONT, &res);
-				joystick.gFFBDevice.mConfig.hardwareConfig.mMaxMotorCurrent = res;
+				joystick.gFFBDevice.mConfig.hardwareConfig.hwSettings[addrMaxMotorCurrent] = res;
 				joystick.gFFBDevice.unsavedSettings = 1;
 				simucubelog.addEvent(readMMCFromIONI, res);
 				currentSystemStatus = DriveInit;
@@ -852,7 +859,9 @@ int main(void)
 				if(statusChanged) simucubelog.addEvent(StateJumpBootloader);
 				resetMaxMMC();
 				HAL_Delay(5);
-				simucube_bootloader();
+				initSMBusBaudrate(false);
+				disableSMDrive();
+				simucube_bootloader(RESET_TO_BOOTLOADER_MAGIC_CODE);
 				while(1) {
 					asm("nop");
 				}
@@ -863,22 +872,25 @@ int main(void)
             	simucubelog.addEvent(StateAutoSetupCommucation, true);
             	handleHidReports();
             	disableSMWatchdog();
-                if(joystick.gFFBDevice.encoderType != 1) {
-                	joystick.gFFBDevice.mConfig.hardwareConfig.autoCommutationStatus=FailedUnsupportedEncoder;
+            	int32_t fbdtype = 0;
+            	smRead1Parameter(joystick.gFFBDevice.mSMBusHandle, 1, SMP_FB1_DEVICE_SELECTION, &fbdtype);
+            	const bool isBiss = fbdtype == SMP_FBD_SERIALDATA;
+                if(!isBiss) {
+                	joystick.gFFBDevice.mConfig.hardwareConfig.hwSettings[addrAutoCommutationStatus]=FailedUnsupportedEncoder;
                 	printf("wrong encodertype\r\n");
                     currentSystemStatus=previousSystemStatus2;
                     simucubelog.addEventParam(AutoCommutationFault, 1, true);
                 	break;
                 }
                 if((previousSystemStatus2 != Operational) && (previousSystemStatus2 != DriveInitSuccessPause)) {
-                	joystick.gFFBDevice.mConfig.hardwareConfig.autoCommutationStatus=FailedNotInitialized;
+                	joystick.gFFBDevice.mConfig.hardwareConfig.hwSettings[addrAutoCommutationStatus]=FailedNotInitialized;
                     currentSystemStatus=previousSystemStatus2;
                     simucubelog.addEventParam(AutoCommutationFault, 2, true);
                     printf("was not operational\r\n");
                     break;
                 }
                 resetMaxMMC();
-                joystick.gFFBDevice.mConfig.hardwareConfig.autoCommutationStatus = Started;
+                joystick.gFFBDevice.mConfig.hardwareConfig.hwSettings[addrAutoCommutationStatus] = Started;
                 smSetParameter(joystick.gFFBDevice.mSMBusHandle, 1, SMP_SYSTEM_CONTROL,SMP_SYSTEM_CONTROL_START_COMMUTATION_SENSOR_AUTOSETUP);
                 int elapsedtime_ms=0, timelimit=30000;
                 bool abort=false;
@@ -901,38 +913,38 @@ int main(void)
 							printf("busy\r\n");
 							break;
 						case 400100://torq ctrl not ready
-							joystick.gFFBDevice.mConfig.hardwareConfig.autoCommutationStatus=FailedUninitialized;
+							joystick.gFFBDevice.mConfig.hardwareConfig.hwSettings[addrAutoCommutationStatus]=FailedUninitialized;
 							abort=true;
 							printf("fault_torq\r\n");
 							simucubelog.addEventParam(AutoCommutationFault, 3, true);
 							break;
 						case 400200://no torque
-							joystick.gFFBDevice.mConfig.hardwareConfig.autoCommutationStatus=FailedLowCurrent1;
+							joystick.gFFBDevice.mConfig.hardwareConfig.hwSettings[addrAutoCommutationStatus]=FailedLowCurrent1;
 							simucubelog.addEventParam(AutoCommutationFault, 4, true);
 							printf("fault_lowcurrent\r\n");
 							abort=true;
 						   break;
 						case 400210://
-							joystick.gFFBDevice.mConfig.hardwareConfig.autoCommutationStatus=FailedNoisyBadHall;
+							joystick.gFFBDevice.mConfig.hardwareConfig.hwSettings[addrAutoCommutationStatus]=FailedNoisyBadHall;
 							simucubelog.addEventParam(AutoCommutationFault, 5, true);
 							printf("fault_noisebad\r\n");
 							abort=true;
 							break;
 						case 400220://
-							joystick.gFFBDevice.mConfig.hardwareConfig.autoCommutationStatus=FailedInvalidHallSequence;
+							joystick.gFFBDevice.mConfig.hardwareConfig.hwSettings[addrAutoCommutationStatus]=FailedInvalidHallSequence;
 							simucubelog.addEventParam(AutoCommutationFault, 6, true);
 							printf("fault_invalidseq\r\n");
 							abort=true;
 							break;
 						case 400400://
-							joystick.gFFBDevice.mConfig.hardwareConfig.autoCommutationStatus=FailedLowCurrent2;
+							joystick.gFFBDevice.mConfig.hardwareConfig.hwSettings[addrAutoCommutationStatus]=FailedLowCurrent2;
 							simucubelog.addEventParam(AutoCommutationFault, 7, true);
 							printf("fault_lowcurrent2\r\n");
 							abort=true;
 							break;
 						case 400999://ok
-							joystick.gFFBDevice.mConfig.hardwareConfig.autoCommutationStatus=Success;
-							joystick.gFFBDevice.mConfig.hardwareConfig.mAutoCommutationMode=1;
+							joystick.gFFBDevice.mConfig.hardwareConfig.hwSettings[addrAutoCommutationStatus]=Success;
+							joystick.gFFBDevice.mConfig.hardwareConfig.hwSettings[addrVariousSettingsBits1]|=(1<<bitAutoCommutationMode);
 							saveDriveCfg();
 							simucubelog.addEvent(AutoCommutationSuccess, true);
 							printf("success\r\n");
@@ -940,7 +952,7 @@ int main(void)
 							abort=true;
 							break;
 						default://wtf
-							joystick.gFFBDevice.mConfig.hardwareConfig.autoCommutationStatus=UnknownResult;
+							joystick.gFFBDevice.mConfig.hardwareConfig.hwSettings[addrAutoCommutationStatus]=UnknownResult;
 							simucubelog.addEventParam(AutoCommutationFault, 10, true);
 							printf("??\r\n");
 							abort=true;
@@ -950,7 +962,7 @@ int main(void)
                 setCurrentProfileMMC();
                 if(elapsedtime_ms>=timelimit)
                 {
-                	joystick.gFFBDevice.mConfig.hardwareConfig.autoCommutationStatus=Timeout;
+                	joystick.gFFBDevice.mConfig.hardwareConfig.hwSettings[addrAutoCommutationStatus]=Timeout;
                 	simucubelog.addEventParam(AutoCommutationFault, 11, true);
                 }
                 currentSystemStatus=previousSystemStatus2;
@@ -983,7 +995,7 @@ PUTCHAR_PROTOTYPE
 {
   /* Place your implementation of fputc here */
   /* e.g. write a character to the EVAL_COM1 and Loop until the end of transmission */
-  HAL_UART_Transmit(&huart1, (uint8_t *)&ch, 1, 0xFFFF);
+  //HAL_UART_Transmit(&huart4, (uint8_t *)&ch, 1, 0xFFFF);
 
   return ch;
 }
@@ -998,13 +1010,13 @@ void SystemClock_Config(void)
   RCC_OscInitTypeDef RCC_OscInitStruct;
   RCC_ClkInitTypeDef RCC_ClkInitStruct;
 
-    /**Configure the main internal regulator output voltage 
+    /**Configure the main internal regulator output voltage
     */
   __HAL_RCC_PWR_CLK_ENABLE();
 
   __HAL_PWR_VOLTAGESCALING_CONFIG(PWR_REGULATOR_VOLTAGE_SCALE1);
 
-    /**Initializes the CPU, AHB and APB busses clocks 
+    /**Initializes the CPU, AHB and APB busses clocks
     */
   RCC_OscInitStruct.OscillatorType = RCC_OSCILLATORTYPE_HSE;
   RCC_OscInitStruct.HSEState = RCC_HSE_ON;
@@ -1019,7 +1031,7 @@ void SystemClock_Config(void)
     Error_Handler();
   }
 
-    /**Initializes the CPU, AHB and APB busses clocks 
+    /**Initializes the CPU, AHB and APB busses clocks
     */
   RCC_ClkInitStruct.ClockType = RCC_CLOCKTYPE_HCLK|RCC_CLOCKTYPE_SYSCLK
                               |RCC_CLOCKTYPE_PCLK1|RCC_CLOCKTYPE_PCLK2;
@@ -1036,11 +1048,11 @@ void SystemClock_Config(void)
     Error_Handler();
   }
 
-    /**Configure the Systick interrupt time 
+    /**Configure the Systick interrupt time
     */
   HAL_SYSTICK_Config(HAL_RCC_GetHCLKFreq()/1000);
 
-    /**Configure the Systick 
+    /**Configure the Systick
     */
   HAL_SYSTICK_CLKSourceConfig(SYSTICK_CLKSOURCE_HCLK);
 
@@ -1116,6 +1128,7 @@ static void MX_TIM4_Init(void)
   htim4_effecttimer.Instance = TIM4;
   htim4_effecttimer.Init.Prescaler = 0;
   htim4_effecttimer.Init.CounterMode = TIM_COUNTERMODE_UP;
+  // 2500 Hz = 28799, 1250 Hz = 57999
   htim4_effecttimer.Init.Period = 57599;//28799;//57599;//28799;//57599;;
   htim4_effecttimer.Init.ClockDivision = TIM_CLOCKDIVISION_DIV1;
 
@@ -1213,6 +1226,41 @@ static void MX_TIM6_Init(void)
 
 }
 
+
+static void MX_TIM7_Init(void)
+{
+
+  TIM_ClockConfigTypeDef sClockSourceConfig;
+  TIM_MasterConfigTypeDef sMasterConfig;
+
+
+  // 250ms
+  htim7_250msledclock.Instance = TIM7;
+  htim7_250msledclock.Init.Prescaler = 287;
+  htim7_250msledclock.Init.CounterMode = TIM_COUNTERMODE_UP;
+  htim7_250msledclock.Init.Period = 62499;
+  htim7_250msledclock.Init.ClockDivision = TIM_CLOCKDIVISION_DIV1;
+
+
+  if (HAL_TIM_Base_Init(&htim7_250msledclock) != HAL_OK)
+  {
+	  Error_Handler();
+  }
+
+  sClockSourceConfig.ClockSource = TIM_CLOCKSOURCE_INTERNAL;
+  if (HAL_TIM_ConfigClockSource(&htim7_250msledclock, &sClockSourceConfig) != HAL_OK)
+  {
+	  Error_Handler();
+  }
+  __HAL_TIM_CLEAR_IT(&htim7_250msledclock,TIM_IT_UPDATE);
+  sMasterConfig.MasterOutputTrigger = TIM_TRGO_RESET;
+  sMasterConfig.MasterSlaveMode = TIM_MASTERSLAVEMODE_DISABLE;
+  if (HAL_TIMEx_MasterConfigSynchronization(&htim7_250msledclock, &sMasterConfig) != HAL_OK)
+  {
+	  Error_Handler();
+  }
+
+}
 extern bool waitingWatchDog;
 
 void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim)
@@ -1220,7 +1268,7 @@ void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim)
 	if(htim->Instance == TIM5) {
 		HAL_TIM_Base_Stop_IT(&htim5_usbsuspenddelay);
 		usbsuspended=0;
-		HAL_GPIO_TogglePin(LED3_OUT_GPIO_Port, LED3_OUT_Pin);
+		joystick.gFFBDevice.toggleEndstopLed();
 		printf("resume\r\n");
 	}
 	else if(htim->Instance == TIM2) {
@@ -1236,183 +1284,12 @@ void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim)
 	else if(htim->Instance == TIM4) {
 		//HAL_GPIO_TogglePin(LED3_OUT_GPIO_Port, LED3_OUT_Pin);
 		//HAL_GPIO_TogglePin(LED4_OUT_GPIO_Port, LED4_OUT_Pin);
-		joystick.gFFBDevice.FFB2500HzWait = false;
+		joystick.gFFBDevice.FFBLoopWait = false;
+	}
+	else if(htim->Instance == TIM7) {
+		joystick.gFFBDevice.doLeds();
 	}
 }
-
-
-
-
-/* ADC1 init function */
-static void MX_ADC1_Init(void)
-{
-
-	ADC_ChannelConfTypeDef sConfig;
-
-	/**Configure the global features of the ADC (Clock, Resolution, Data Alignment and number of conversion)
-	*/
-	hadc1.Instance = ADC1;
-	hadc1.Init.ClockPrescaler = ADC_CLOCK_SYNC_PCLK_DIV8;
-	hadc1.Init.Resolution = ADC_RESOLUTION_12B;
-	hadc1.Init.ScanConvMode = ENABLE;
-	hadc1.Init.ContinuousConvMode = ENABLE;
-	hadc1.Init.DiscontinuousConvMode = DISABLE;
-	hadc1.Init.ExternalTrigConvEdge = ADC_EXTERNALTRIGCONVEDGE_NONE;
-	hadc1.Init.ExternalTrigConv = ADC_SOFTWARE_START;
-	hadc1.Init.DataAlign = ADC_DATAALIGN_LEFT;
-	hadc1.Init.NbrOfConversion = NUM_ADC_CHANNELS;
-	hadc1.Init.DMAContinuousRequests = ENABLE;
-	hadc1.Init.EOCSelection = ADC_EOC_SINGLE_CONV;
-	if (HAL_ADC_Init(&hadc1) != HAL_OK)
-	{
-	Error_Handler();
-	}
-
-	// X11 UPPER
-
-	// x11 upper 1
-	sConfig.Channel = ADC_CHANNEL_9;
-	sConfig.Rank = 1;
-	sConfig.SamplingTime = ADC_SAMPLETIME_84CYCLES;
-	if (HAL_ADC_ConfigChannel(&hadc1, &sConfig) != HAL_OK)
-	{
-	  Error_Handler();
-	}
-
-	// x11 upper 2
-	sConfig.Channel = ADC_CHANNEL_8;
-	sConfig.Rank = 2;
-	sConfig.SamplingTime = ADC_SAMPLETIME_84CYCLES;
-	if (HAL_ADC_ConfigChannel(&hadc1, &sConfig) != HAL_OK)
-	{
-	  Error_Handler();
-	}
-	// x11 upper 3
-	sConfig.Channel = ADC_CHANNEL_15;
-	sConfig.Rank = 3;
-	sConfig.SamplingTime = ADC_SAMPLETIME_84CYCLES;
-	if (HAL_ADC_ConfigChannel(&hadc1, &sConfig) != HAL_OK)
-	{
-	  Error_Handler();
-	}
-	// x11 upper 5
-	sConfig.Channel = ADC_CHANNEL_14;
-	sConfig.Rank = 4;
-	sConfig.SamplingTime = ADC_SAMPLETIME_84CYCLES;
-	if (HAL_ADC_ConfigChannel(&hadc1, &sConfig) != HAL_OK)
-	{
-	  Error_Handler();
-	}
-	// x11 upper 6
-	sConfig.Channel = ADC_CHANNEL_7;
-	sConfig.Rank = 5;
-	if (HAL_ADC_ConfigChannel(&hadc1, &sConfig) != HAL_OK)
-	{
-	  Error_Handler();
-	}
-
-
-	// X11 LOWER
-
-	// x11 lower 2
-	sConfig.Channel = ADC_CHANNEL_13;
-	sConfig.Rank = 6;
-	if (HAL_ADC_ConfigChannel(&hadc1, &sConfig) != HAL_OK)
-	{
-	  Error_Handler();
-	}
-	// x11 lower 3
-	sConfig.Channel = ADC_CHANNEL_3;
-	sConfig.Rank = 7;
-	if (HAL_ADC_ConfigChannel(&hadc1, &sConfig) != HAL_OK)
-	{
-	  Error_Handler();
-	}
-	// x11 lower 5
-	sConfig.Channel = ADC_CHANNEL_4;
-	sConfig.Rank = 8;
-	if (HAL_ADC_ConfigChannel(&hadc1, &sConfig) != HAL_OK)
-	{
-	  Error_Handler();
-	}
-	// x11 lower 6
-	sConfig.Channel = ADC_CHANNEL_5;
-	sConfig.Rank = 9;
-	if (HAL_ADC_ConfigChannel(&hadc1, &sConfig) != HAL_OK)
-	{
-	  Error_Handler();
-	}
-	// x11 lower 7
-	sConfig.Channel = ADC_CHANNEL_6;
-	sConfig.Rank = 10;
-	if (HAL_ADC_ConfigChannel(&hadc1, &sConfig) != HAL_OK)
-	{
-	  Error_Handler();
-	}
-
-
-	// EXT POT
-
-	// EXT POT 1
-	sConfig.Channel = ADC_CHANNEL_12;
-	sConfig.Rank = 11;
-	if (HAL_ADC_ConfigChannel(&hadc1, &sConfig) != HAL_OK)
-	{
-	  Error_Handler();
-	}
-
-	// EXT POT 2
-	sConfig.Channel = ADC_CHANNEL_11;
-	sConfig.Rank = 12;
-	if (HAL_ADC_ConfigChannel(&hadc1, &sConfig) != HAL_OK)
-	{
-	  Error_Handler();
-	}
-
-	// EXT POT 3
-	sConfig.Channel = ADC_CHANNEL_10;
-	sConfig.Rank = 13;
-	if (HAL_ADC_ConfigChannel(&hadc1, &sConfig) != HAL_OK)
-	{
-	  Error_Handler();
-	}
-}
-
-/* I2C1 init function */
-static void MX_I2C1_Init(void)
-{
-
-}
-
-
-
-
-/* USART1 init function */
-static void MX_USART1_UART_Init(void)
-{
-
-  huart1.Instance = USART1;
-  huart1.Init.BaudRate = 230400;//115200;
-  huart1.Init.WordLength = UART_WORDLENGTH_8B;
-  huart1.Init.StopBits = UART_STOPBITS_1;
-  huart1.Init.Parity = UART_PARITY_NONE;
-  huart1.Init.Mode = UART_MODE_TX_RX;
-  huart1.Init.HwFlowCtl = UART_HWCONTROL_NONE;
-  huart1.Init.OverSampling = UART_OVERSAMPLING_16;
-  if (HAL_UART_Init(&huart1) != HAL_OK)
-  {
-    Error_Handler();
-  }
-
-}
-
-
-
-
-
-
-
-
 
 
 
@@ -1444,130 +1321,6 @@ static void MX_DMA_Init(void)
 
 
 
-/** Configure pins as 
-        * Analog 
-        * Input 
-        * Output
-        * EVENT_OUT
-        * EXTI
-     PB6   ------> I2C1_SCL
-     PB7   ------> I2C1_SDA
-*/
-static void MX_GPIO_Init(void)
-{
-
-  GPIO_InitTypeDef GPIO_InitStruct;
-
-  /* GPIO Ports Clock Enable */
-  __HAL_RCC_GPIOE_CLK_ENABLE();
-  __HAL_RCC_GPIOC_CLK_ENABLE();
-  __HAL_RCC_GPIOH_CLK_ENABLE();
-  __HAL_RCC_GPIOA_CLK_ENABLE();
-  __HAL_RCC_GPIOB_CLK_ENABLE();
-  __HAL_RCC_GPIOD_CLK_ENABLE();
-
-  /*Configure GPIO pins : X12_LOWER_1_Pin X12_LOWER_2_Pin X12_LOWER_4_Pin X12_UPPER_6_Pin 
-                           STM_PE6_Pin STM_PE7_Pin STM_PE8_Pin STM_PE10_Pin 
-                           STM_PE13_Pin STM_PE14_Pin STM_PE15_Pin X15_3_Pin 
-                           X12_LOWER_3_Pin */
-  GPIO_InitStruct.Pin = X12_LOWER_1_Pin|X12_LOWER_2_Pin|X12_LOWER_4_Pin|X12_UPPER_6_Pin 
-                          |STM_PE6_Pin|STM_PE7_Pin|STM_PE8_Pin|STM_PE10_Pin 
-                          |STM_PE13_Pin|STM_PE14_Pin|STM_PE15_Pin|X15_3_Pin 
-                          |X12_LOWER_3_Pin;
-  GPIO_InitStruct.Mode = GPIO_MODE_INPUT;
-  GPIO_InitStruct.Pull = GPIO_NOPULL;
-  HAL_GPIO_Init(GPIOE, &GPIO_InitStruct);
-
-  /*Configure GPIO pins : X12_LOWER_6_Pin X12_LOWER_7_Pin X11_LOWER_1_Pin X12_UPPER_2_Pin 
-                           X12_UPPER_3_Pin X12_UPPER_4_Pin X12_UPPER_5_Pin X12_UPPER_7_Pin 
-                           X12_UPPER_1_Pin X12_LOWER_5_Pin */
-  GPIO_InitStruct.Pin = X12_LOWER_6_Pin|X12_LOWER_7_Pin|X11_LOWER_1_Pin|X12_UPPER_2_Pin 
-                          |X12_UPPER_3_Pin|X12_UPPER_4_Pin|X12_UPPER_5_Pin|X12_UPPER_7_Pin 
-                          |X12_UPPER_1_Pin|X12_LOWER_5_Pin;
-  GPIO_InitStruct.Mode = GPIO_MODE_INPUT;
-  GPIO_InitStruct.Pull = GPIO_NOPULL;
-  HAL_GPIO_Init(GPIOC, &GPIO_InitStruct);
-
-  /*Configure GPIO pins : STM_ENC_IN_A_Pin STM_ENC_IN_B_Pin STM_ENC_IN_C_Pin PA8 */
-  GPIO_InitStruct.Pin = STM_ENC_IN_A_Pin|STM_ENC_IN_B_Pin|STM_ENC_IN_C_Pin|GPIO_PIN_8;
-  GPIO_InitStruct.Mode = GPIO_MODE_INPUT;
-  GPIO_InitStruct.Pull = GPIO_NOPULL;
-  HAL_GPIO_Init(GPIOA, &GPIO_InitStruct);
-
-  /*Configure GPIO pins : GP01_STM_Pin PB12 PB13 PB14 
-                           PB15 DIPSW_2_Pin STM_PB9_Pin */
-  GPIO_InitStruct.Pin = GP01_STM_Pin|GPIO_PIN_12|GPIO_PIN_13|GPIO_PIN_14 
-                          |GPIO_PIN_15|DIPSW_2_Pin|STM_PB9_Pin;
-  GPIO_InitStruct.Mode = GPIO_MODE_INPUT;
-  GPIO_InitStruct.Pull = GPIO_NOPULL;
-  HAL_GPIO_Init(GPIOB, &GPIO_InitStruct);
-
-  /*Configure GPIO pins : STM_IONI_PWM_OUT_HSIN2_Pin STM_IONI_DIR_OUT_HSIN1_Pin  */
-  GPIO_InitStruct.Pin = STM_IONI_PWM_OUT_HSIN2_Pin|STM_IONI_DIR_OUT_HSIN1_Pin;
-  GPIO_InitStruct.Mode = GPIO_MODE_OUTPUT_PP;
-  GPIO_InitStruct.Pull = GPIO_NOPULL;
-  GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_LOW;
-  HAL_GPIO_Init(GPIOE, &GPIO_InitStruct);
-
-  /*Configure GPIO pins : HX711_CLKOUT_Pin */
-  GPIO_InitStruct.Pin = HX711_CLKOUT_Pin;
-  GPIO_InitStruct.Mode = GPIO_MODE_OUTPUT_PP;
-  GPIO_InitStruct.Pull = GPIO_NOPULL;
-  GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_LOW;
-  HAL_GPIO_Init(GPIOE, &GPIO_InitStruct);
-
-  /*Configure GPIO pins : RS485_TXEN_STM_Pin LED4_OUT_Pin LED3_OUT_Pin LED2_OUT_Pin 
-                           LED1_CLIPPING_OUT_Pin */
-  GPIO_InitStruct.Pin = RS485_TXEN_STM_Pin|LED4_OUT_Pin|LED3_OUT_Pin|LED2_OUT_Pin 
-                          |LED1_CLIPPING_OUT_Pin;
-  GPIO_InitStruct.Mode = GPIO_MODE_OUTPUT_PP;
-  GPIO_InitStruct.Pull = GPIO_NOPULL;
-  GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_LOW;
-  HAL_GPIO_Init(GPIOD, &GPIO_InitStruct);
-
-  /*Configure GPIO pins : STM_PD9_Pin STM_PD10_Pin STM_PD11_Pin IDSEL_0_Pin 
-                           IDSEL_1_Pin IDSEL_2_Pin FTDI_USB_SLEEP_IN_Pin USB_GRANITY_VCC_SENSE_Pin 
-                           USB_HID_VCC_SENSE_Pin STM_PD6_Pin STM_PD7_Pin */
-  GPIO_InitStruct.Pin = STM_PD9_Pin|STM_PD10_Pin|STM_PD11_Pin|
-                          FTDI_USB_SLEEP_IN_Pin|USB_GRANITY_VCC_SENSE_Pin
-                          |USB_HID_VCC_SENSE_Pin|STM_PD6_Pin|STM_PD7_Pin;
-  GPIO_InitStruct.Mode = GPIO_MODE_INPUT;
-  GPIO_InitStruct.Pull = GPIO_NOPULL;
-  HAL_GPIO_Init(GPIOD, &GPIO_InitStruct);
-
-  /* Configure GPIO IDSEL pins with Internal Pull-up */
-  GPIO_InitStruct.Pin = IDSEL_0_Pin | IDSEL_1_Pin | IDSEL_2_Pin;
-  GPIO_InitStruct.Mode = GPIO_MODE_INPUT;
-  GPIO_InitStruct.Pull = GPIO_PULLUP;
-  HAL_GPIO_Init(GPIOD, &GPIO_InitStruct);
-
-  /*Configure GPIO pins : GPI4_CLEAR_FAULTS_Pin PB5 */
-  GPIO_InitStruct.Pin = GPI4_CLEAR_FAULTS_Pin|GPIO_PIN_5;
-  GPIO_InitStruct.Mode = GPIO_MODE_OUTPUT_PP;
-  GPIO_InitStruct.Pull = GPIO_NOPULL;
-  GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_LOW;
-  HAL_GPIO_Init(GPIOB, &GPIO_InitStruct);
-
-  /*Configure GPIO pins : PB6 PB7 */
-  GPIO_InitStruct.Pin = GPIO_PIN_6|GPIO_PIN_7;
-  GPIO_InitStruct.Mode = GPIO_MODE_AF_OD;
-  GPIO_InitStruct.Pull = GPIO_PULLUP;
-  GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_VERY_HIGH;
-  GPIO_InitStruct.Alternate = GPIO_AF4_I2C1;
-  HAL_GPIO_Init(GPIOB, &GPIO_InitStruct);
-
-  /*Configure GPIO pin Output Level */
-  HAL_GPIO_WritePin(GPIOE, STM_IONI_PWM_OUT_HSIN2_Pin|STM_IONI_DIR_OUT_HSIN1_Pin|HX711_CLKOUT_Pin, GPIO_PIN_RESET);
-
-  /*Configure GPIO pin Output Level */
-  HAL_GPIO_WritePin(GPIOD, RS485_TXEN_STM_Pin|LED4_OUT_Pin|LED3_OUT_Pin|LED2_OUT_Pin 
-                          |LED1_CLIPPING_OUT_Pin, GPIO_PIN_RESET);
-
-  /*Configure GPIO pin Output Level */
-  HAL_GPIO_WritePin(GPIOB, GPI4_CLEAR_FAULTS_Pin|GPIO_PIN_5, GPIO_PIN_RESET);
-
-}
-
 
 /* USER CODE BEGIN 4 */
 
@@ -1582,10 +1335,10 @@ void Error_Handler(void)
 {
   /* USER CODE BEGIN Error_Handler */
   /* User can add his own implementation to report the HAL error return state */
-  while(1) 
+  while(1)
   {
   }
-  /* USER CODE END Error_Handler */ 
+  /* USER CODE END Error_Handler */
 }
 
 void _Error_Handler(char *file, int line)

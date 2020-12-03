@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2016-2018 Granite Devices Oy
+ * Copyright (c) 2016-2020 Granite Devices Oy
  * ---------------------------------------------------------------------------
  * This file is made available under the terms of Granite Devices Software
  * End-User License Agreement, available at https://granitedevices.com/legal

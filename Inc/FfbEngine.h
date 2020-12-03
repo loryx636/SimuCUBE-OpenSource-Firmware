@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2016-2018 Granite Devices Oy
+ * Copyright (c) 2016-2020 Granite Devices Oy
  * ---------------------------------------------------------------------------
  * This file is made available under the terms of Granite Devices Software
  * End-User License Agreement, available at https://granitedevices.com/legal
@@ -290,9 +290,9 @@ public:
 	virtual ~FfbEngine();
 
 
-	bool handleReceivedHIDReport(HID_REPORT report);
+	bool handleReceivedHIDReport(const uint8_t* report);
 	void FfbOnCreateNewEffect (USB_FFBReport_CreateNewEffect_Feature_Data_t* inData, USB_FFBReport_PIDBlockLoad_Feature_Data_t *outData);
-	volatile cEffectState* getEffectState(u8 id);
+	volatile cEffectState* getEffectState(uint8_t id);
 
 	void FreeAllEffects(void);
 
@@ -303,8 +303,6 @@ private:
 	volatile cEffectState gEffectStates[MAX_EFFECTS+1];	// one for each effect (array index 0 is unused to simplify things)
 	//cEffectState gEffectStates[MAX_EFFECTS+1];	// one for each effect (array index 0 is unused to simplify things)
 	USB_FFBReport_PIDBlockLoad_Feature_Data_t gNewEffectBlockLoad;
-
-
 
 	void SendPidStateForEffect(uint8_t eid, uint8_t effectState);
 	uint8_t GetNextFreeEffect(void);
@@ -354,10 +352,6 @@ private:
 	void SetRampForce(USB_FFBReport_SetRampForce_Output_Data_t* data, int effectId );
 	void SetEffect(USB_FFBReport_SetEffect_Output_Data_t *data, int effectId );
 	void CreateNewEffect(USB_FFBReport_CreateNewEffect_Feature_Data_t* inData, int effectId );
-
-
-
-
 };
 
 #endif /* FFBENGINE_H_ */

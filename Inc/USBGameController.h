@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2016-2018 Granite Devices Oy
+ * Copyright (c) 2016-2020 Granite Devices Oy
  * ---------------------------------------------------------------------------
  * This file is made available under the terms of Granite Devices Software
  * End-User License Agreement, available at https://granitedevices.com/legal
@@ -23,17 +23,15 @@
 #ifndef USBGAMECONTROLLER_H
 #define USBGAMECONTROLLER_H
 
-#ifdef __cplusplus
- extern "C" {
-#endif
-
 //#include "USBHID.h"
 #include "FfbEngine.h"
 #include "USBHID_Types.h"
 #include "answer_filetypes.h"
-#include "cffbdevice.h"
+#include "cFFBDevice.h"
+#include "../SimpleMotion/simplemotion.h"
 
 #define REPORT_ID_JOYSTICK  4
+#define USB_REPORT_SEND_MIN_PERIOD_MS 50
 
 // bmRequestType
 #define REQUEST_HOSTTODEVICE	0x00
@@ -159,154 +157,114 @@ enum JOY_HAT {
 #define JY_MAX_ABS    (127)      /*!< The maximum value that we can move down on the y-axis */
 #define JT_MAX_ABS    (127)      /*!< The maximum value for the throttle */
 
-
 #define RX_REPORT_BUFFER_COUNT 32//this must be power of 2
 
 class USBGameController {
    public:
+		USBGameController();
+		~USBGameController();
 
-        /**
-         *   Constructor
-         *
-         * @param vendor_id Your vendor_id (default: 0x1234)
-         * @param product_id Your product_id (default: 0x0002)
-         * @param product_release Your product_release (default: 0x0001)
-         */
-         USBGameController();//uint16_t vendor_id = 0x7c5a, uint16_t product_id = 0xb101, uint16_t product_release = 0x0001);
-             /*USBHID(0, 0, vendor_id, product_id, product_release, false),receivedReportBufferHead(0),FFBEnabled(false),receivedReportBufferTail(0)
-             {
-                 _init();
-                 connect();
-             };*/
+		/**
+		 * Report state to USB host.
+		 * @returns true if ok, false if some internal error
+		 */
+		bool update(uint16_t steering);
 
-         ~USBGameController();
+		/**
+		 * Reports the state of USB host when steering has not changed.
+		 * @return true if ok, false if some internal error
+		 */
+		bool update_unchanged_steering();
 
-         /**
-         * Write a state of the game controller
-         *
-         * @param 4 pedals first
-         * @param x x-axis position
-         * @param y y-axis position
-         * @param buttons buttons state
-         * @param hat hat state 0 (up), 1 (right, 2 (down), 3 (left) or 4 (neutral)
-         * @returns true if there is no error, false otherwise
-         */
-         //bool update(uint16_t brake, uint16_t clutch, uint16_t throttle, uint16_t rudder, uint16_t x, uint16_t y, uint32_t button, uint8_t hat);
-         bool update(uint16_t steering);
+		/*
+		 * Called when a data is received on the USB OUT endpoint.
+		 * @returns if handled 1, otherwise 0
+		 */
+		uint8_t EPINT_OUT_callback(uint8_t *report);
 
-         /**
-         * Write a state of the mouse
-         *
-         * @returns true if there is no error, false otherwise
-         */
-         bool update();
+		void FfbOnCreateNewEffect();
 
-         /**
-         * Move the throttle position
-         *
-         * @param t throttle position
-         * @returns true if there is no error, false otherwise
-         */
-         bool throttle(int16_t t);
+		// Processes a single unprocessed (not necessarily latest) HID report when USBReportsEnabled
+		bool tryConsumeReceivedReport();
 
-         /**
-         * Move the rudder position
-         *
-         * @param r rudder position
-         * @returns true if there is no error, false otherwise
-         */
-         bool rudder(int16_t r);
+		// Called by factorytester to consume a single received report
+		bool tryTakeReceivedReport(HID_REPORT* report);
 
-         /**
-         * Move the cursor to (x, y)
-         *
-         * @param x-axis position
-         * @param y-axis position
-         * @returns true if there is no error, false otherwise
-         */
-         bool move(int16_t x, int16_t y);
+		/// ???
+		USB_FFBReport_PIDPool_Feature_Data_t* get_mGetReportAnswer();
 
-         /**
-         * Press one or several buttons
-         *
-         * @param button button state
-         * @returns true if there is no error, false otherwise
-         */
-         bool button(uint32_t button);
-
-         /**
-         * Press hat
-         *
-         * @param hat hat state
-         * @returns true if there is no error, false otherwise
-         */
-         bool hat(uint8_t hat);
-
-
-
-         /*
-         * Called when a data is received on the OUT endpoint.
-         *
-         * @returns if handle by subclass, return true
-         */
-         uint8_t EPINT_OUT_callback(uint8_t *report);
-
-
-
-
-
-	
-        void FfbOnCreateNewEffect();
-	    bool handleReceivedHIDReport(HID_REPORT report);
-
-        unsigned int getPendingReceivedReportCount();
-
-        HID_REPORT getReceivedReport();
-
-        void initSteeringAngles();
-
-
-
-        USB_FFBReport_PIDPool_Feature_Data_t* get_mGetReportAnswer();
+		/// ???
 		USB_FFBReport_PIDBlockLoad_Feature_Data_t* get_mSetReportAnswer();
-		void set_mSetReportAnswerId(uint8_t reportid);
+
+		// Initializes the report received with get_mGetReportAnswer with this report kind as the response
+		// might have been changed by FfbEngine after changing effects.
 		void set_mGetReportAnswer(uint8_t reportid);
 
 		cFFBDevice gFFBDevice;
 
+		// This is used to throttle report processing immediatedly after connecting the USB device for some reason.
 		bool USBReportsEnabled;
+
 		FfbEngine FFB;
-		uint32_t counter;
-		uint32_t maxcounter;
-
-     private:
-         bool FFBEnabled;
-         int16_t Throttle;
-         int16_t Brake;
-         int16_t Clutch;
-         int16_t Rudder;
-         int16_t X;
-         int16_t Y;
-         int16_t Z;
-         int16_t T;
-         uint32_t Buttons;
-         uint8_t Hat;
-
-         //storage for SET_REPORTs from host
-         unsigned int receivedReportBufferHead, receivedReportBufferTail;//head is index where new arrived report is stored, tail is the index where is last unhandled report
-		 HID_REPORT receivedReports[RX_REPORT_BUFFER_COUNT];
-
-		 USB_FFBReport_PIDPool_Feature_Data_t mGetReportAnswer;
-		 USB_FFBReport_PIDBlockLoad_Feature_Data_t mSetReportAnswer;
 
 
+	private:
+		/**
+		 * Send HID report to USB host. Report contains controller positions.
+		 * @return true if ok, false if something did not work out
+		 */
+		bool update();
 
+		// FIXME: used from hw_functions.cpp
+		uint32_t Buttons[4];
+		// FIXME: this method is implemented in hw_functions.cpp
+		void addHwButtonsToReport(int &i);
+		// FIXME: also in hw_functions.cpp
+		void fillRestOfReport(int &i);
 
-         void _init();
+		// Shifts the Bluetooth button state into currentreport and increments i by the used bytes
+		void addBleButtonsToReport(int &i);
+
+		int16_t Throttle;
+		int16_t Brake;
+		int16_t Clutch;
+		int16_t Rudder;
+		int16_t X;
+		int16_t Y;
+		int16_t Z;
+		int16_t T;
+		uint8_t Hat;
+
+		// @returns the number of unprocessed reports in the FIFO
+        unsigned int getPendingReceivedReportCount();
+
+		/**
+		 * Note: this method will happily move the tail of the FIFO after the head, so only
+		 * call this after making sure there is something in the FIFO with getPendingReceivedReportCount.
+		 * @returns reference to the oldest unconsumed report
+		 */
+        HID_REPORT& takeReceivedReport();
+
+		// Distributes given HID report to interested parties
+		bool handleReceivedHIDReport(HID_REPORT& report);
+
+		unsigned int receivedReportBufferHead; // the index for latest arrived report
+		unsigned int receivedReportBufferTail; // the index for last unhandled report
+
+		HID_REPORT receivedReports[RX_REPORT_BUFFER_COUNT];
+
+		USB_FFBReport_PIDPool_Feature_Data_t mGetReportAnswer;
+		USB_FFBReport_PIDBlockLoad_Feature_Data_t mSetReportAnswer;
+
+		HID_REPORT reports[2] __attribute__((aligned(4)));
+		HID_REPORT* currentreport;
+		HID_REPORT* oldreport;
+
+		// timestamp of when the last report sending started
+		uint64_t lastsend;
+
+		// @returns true if enough time has elapsed from last report or if the report has changed
+		bool isReportSendingNeeded();
+
 };
-
-#ifdef __cplusplus
-}
-#endif
-
 #endif
